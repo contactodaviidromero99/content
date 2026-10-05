@@ -53,3 +53,44 @@ jobs:
         env:
           FUENTES: ${{ github.event.inputs.fuentes }}
         run: python -u -m romero_crm.diagnose $FUENTES
+
+  instalacion-mac:
+    name: Instalación en Mac (Python ${{ matrix.nombre }})
+    runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: "de Apple"
+            python: /usr/bin/python3
+          - nombre: "de Homebrew"
+            python: ""
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar como lo hará el usuario
+        env:
+          ROMERO_PYTHON: ${{ matrix.python }}
+        run: |
+          git archive --format=zip --prefix=content-main/ HEAD -o "$RUNNER_TEMP/repo.zip"
+          ROMERO_ZIP_URL="file://$RUNNER_TEMP/repo.zip" bash romero-crm/scripts/instalar.sh
+      - name: Comprobar que la aplicación arranca y responde
+        run: |
+          test -d "$HOME/Applications/Romero CRM.app"
+          VENV="$HOME/Library/Application Support/Romero CRM/venv"
+          "$VENV/bin/python" --version
+          "$VENV/bin/python" -c "import webview; print('Ventana propia (pywebview) disponible')"
+          for attempt in $(seq 1 60); do
+            PID="$(pgrep -f '[-]m romero_crm' | head -n 1)"
+            if [ -n "$PID" ]; then
+              PORT="$(lsof -nP -a -p "$PID" -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 { sub(/.*:/, "", $9); print $9; exit }')"
+              if [ -n "$PORT" ] && curl -fsS "http://127.0.0.1:$PORT/api/status"; then
+                echo
+                echo "Romero CRM responde en el puerto $PORT"
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+          echo "Romero CRM no llegó a responder"
+          exit 1

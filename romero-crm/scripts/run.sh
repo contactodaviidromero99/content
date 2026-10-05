@@ -14,7 +14,7 @@ aviso() {
 }
 
 find_python() {
-  for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3 \
+  for candidate in "$ROMERO_PYTHON" /opt/homebrew/bin/python3 /usr/local/bin/python3 \
       /Library/Frameworks/Python.framework/Versions/Current/bin/python3 "$(command -v python3)" /usr/bin/python3; do
     [ -n "$candidate" ] && [ -x "$candidate" ] || continue
     if "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
@@ -27,6 +27,11 @@ find_python() {
 
 if [ ! -x "$VENV/bin/python" ]; then
   PY="$(find_python)"
+  if [ -z "$PY" ] && [ "$(uname)" = "Darwin" ] && ! xcode-select -p >/dev/null 2>&1; then
+    xcode-select --install >/dev/null 2>&1
+    aviso "Romero CRM necesita Python, que viene con las «herramientas de línea de comandos» de Apple. Pulsa «Instalar» en la ventana de Apple, espera a que termine (unos minutos) y vuelve a intentarlo."
+    exit 1
+  fi
   if [ -z "$PY" ]; then
     aviso "Romero CRM necesita Python 3.9 o superior. Se abrirá python.org: descarga el instalador para macOS, instálalo y vuelve a abrir Romero CRM."
     open "https://www.python.org/downloads/macos/" 2>/dev/null

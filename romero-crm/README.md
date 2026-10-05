@@ -28,38 +28,43 @@ Al pulsar un tema se abre su ficha: por qué es tendencia, titulares que lo expl
 
 ![Ficha de un tema](docs/detalle.jpg)
 
-## Cómo abrirlo en tu Mac
+## Cómo instalarlo en tu Mac
 
-### Opción A: pídeselo a Claude Code en tu ordenador (la más fácil)
+### Instalar (una sola vez)
 
-Abre Claude Code en tu Mac y pega esto:
+1. Abre la aplicación **Terminal**: pulsa **⌘ + espacio**, escribe `Terminal` y pulsa **Intro**.
+2. Copia esta línea entera, pégala en Terminal (**⌘ + V**) y pulsa **Intro**:
 
-```
-Descarga el repositorio contactodaviidromero99/content de GitHub (rama claude/upbeat-carson-tq3p5m),
-entra en la carpeta romero-crm y ejecuta «Instalar en Aplicaciones.command».
-Después abre Romero CRM.
-```
+   ```
+   curl -fsSL https://raw.githubusercontent.com/contactodaviidromero99/content/main/romero-crm/scripts/instalar.sh | bash
+   ```
 
-### Opción B: a mano
+3. Espera. La primera vez tarda 1-2 minutos. Al terminar verás Romero CRM en tu carpeta Aplicaciones y el programa se abrirá solo.
 
-1. En GitHub, entra en el repositorio, elige la rama `claude/upbeat-carson-tq3p5m`, pulsa **Code → Download ZIP** y descomprímelo.
-2. Abre la carpeta `romero-crm`.
-3. Haz **clic derecho → Abrir** sobre **`Abrir Romero CRM.command`** (la primera vez macOS pregunta porque el archivo viene de internet; pulsa *Abrir*).
-4. La primera vez tarda 1-2 minutos en prepararse. Las siguientes, unos segundos.
+Si macOS te pide instalar las **«herramientas de línea de comandos»**, pulsa *Instalar*, acepta y espera a que acabe (unos minutos). Después repite el paso 2. Son de Apple y traen Python, que es lo que necesita Romero CRM.
 
-Si quieres tenerlo como una aplicación más (en Launchpad y Spotlight, con su icono), ejecuta una vez **`Instalar en Aplicaciones.command`** de la misma forma.
+### Abrirlo cualquier día
 
-**Necesita Python 3.9 o superior.** Si no lo tienes, el programa te lo dice y abre la página de descarga (python.org → *Download Python*). Si macOS te pide instalar las «herramientas de línea de comandos», acepta: también sirven.
+Pulsa **⌘ + espacio**, escribe `Romero` y pulsa **Intro**. También está en Launchpad.
+
+### Actualizarlo
+
+Cierra Romero CRM y repite el paso 2. Tu historial no se borra.
+
+### Sin Terminal (alternativa)
+
+1. En GitHub, pulsa **Code → Download ZIP** y descomprímelo.
+2. Abre la carpeta `romero-crm` y haz **clic derecho → Abrir** sobre **`Abrir Romero CRM.command`**. La primera vez macOS pregunta porque el archivo viene de internet. Si no te deja, ve a **Ajustes del Sistema → Privacidad y seguridad** y pulsa **Abrir igualmente**.
 
 ### Versión en el navegador
 
-Si prefieres usarlo en el navegador en lugar de en su propia ventana:
+Si prefieres usarlo en el navegador en lugar de en su propia ventana, pega esto en Terminal:
 
 ```
-./scripts/run.sh --web
+bash ~/"Romero CRM"/scripts/run.sh --web
 ```
 
-y entra en `http://127.0.0.1:8765`.
+Se abrirá en `http://127.0.0.1:8765`. Para cerrarlo, pulsa **Ctrl + C** en Terminal.
 
 ## Sin la nube
 
