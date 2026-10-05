@@ -66,7 +66,7 @@ class Engine:
             if result.items[0].get("date") != dt.date.today().isoformat():
                 return True
         age = time.time() - (result.fetched_at or 0)
-        if not result.ok:
+        if not result.ok and not (result.meta or {}).get("requires_login"):
             return age > 5 * 60
         return age > minutes * 60 - 30
 
@@ -91,7 +91,7 @@ class Engine:
         cache_dir = self.storage.cache_dir
         return {
             "google": lambda: google_trends.fetch(hours=24),
-            "google_week": lambda: google_trends.fetch(hours=168, timeline_limit=0),
+            "google_week": lambda: google_trends.fetch(hours=168),
             "x": x_trends.fetch,
             "tiktok": tiktok.fetch,
             "wikipedia": wikipedia.fetch,
@@ -135,6 +135,11 @@ class Engine:
         google = self.results.get("google")
         if google and google.ok and "google" in due:
             self.storage.upsert_google(google.items, self._google_niche)
+            self.storage.record_google_snapshots(google.items, google.fetched_at or now)
+            if self.demo_loader:
+                self.storage.add_google_snapshots((google.meta or {}).get("seed_snapshots") or [])
+        if google and google.ok:
+            analysis.attach_volume_history(google.items, self.storage.google_snapshots(now - 26 * 3600), now)
 
         google_rows = self.storage.google_rows(now - 8 * 86400)
         lifecycle = analysis.lifecycle_stats(google_rows)
@@ -224,6 +229,7 @@ class Engine:
                 "count": len(result.items) if result else 0,
                 "mode": (result.meta or {}).get("mode") or (result.meta or {}).get("provider") if result else None,
                 "stale": bool(result and (result.meta or {}).get("stale_error")),
+                "requires_login": bool(result and (result.meta or {}).get("requires_login")),
             }
         return status
 
@@ -238,12 +244,13 @@ class Engine:
         topic_by_key = {t["key"]: t for t in topics}
         rising = [t for t in topics if t["phase"] in ("explosivo", "subiendo", "temprana") and not t["utility"]]
         rising.sort(key=lambda t: -t["potential"])
+        topic_niche = {(s, t[s]["id"]): t["niche"] for t in topics for s in ("google", "x") if t.get(s)}
         google_items = result_items("google")
         for item in google_items:
-            item["niche"] = self._google_niche(item)
+            item["niche"] = topic_niche.get(("google", item["id"])) or self._google_niche(item)
         x_items = result_items("x")
         for item in x_items:
-            item["niche"] = classify(item["title"])[0]
+            item["niche"] = topic_niche.get(("x", item["id"])) or classify(item["title"])[0]
         for item in result_items("tiktok"):
             item["niche"] = classify(item["name"], base=item.get("niche_hint"), prior=1.0)[0]
 

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import re
 import statistics
 import time
 from collections import Counter, defaultdict
 
 from .niches import NICHE_NAMES, NICHE_ORDER, NICHES, classify, is_utility
-from .text import GENERIC_TOKENS, casing_map, key, recase, tokens
+from .text import GENERIC_TOKENS, STOPWORDS, casing_map, key, norm, recase, split_hashtag, strip_accents, tokens
 
 SOURCE_ORDER = ("google", "youtube", "tiktok", "x", "wikipedia", "news")
 PHASE_LABELS = {
@@ -20,8 +21,8 @@ PHASE_LABELS = {
 PHASE_WEIGHT = {"explosivo": 1.0, "subiendo": 0.85, "temprana": 0.75, "pico": 0.55, "enfriandose": 0.25}
 DEFAULT_LIFETIME_H = 20.0
 SERIES_LABELS = {
-    "google": "Interés de búsqueda en Google · últimas 24 h",
-    "x": "Posición en tendencias de X · últimas 24 h",
+    "google_volume": "Búsquedas acumuladas en Google · registro de Romero CRM",
+    "x": "Posición en tendencias de X · últimas horas",
     "tiktok": "Popularidad en TikTok · últimos 7 días",
     "wikipedia": "Lecturas en Wikipedia desde España · últimos días",
 }
@@ -49,15 +50,61 @@ def percentiles(values: dict) -> dict:
     return out
 
 
-def slope_ratio(series, window: int = 6):
-    if not series or len(series) < window * 2 + 1:
+VOLUME_BUCKETS = (100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000,
+                  1000000, 2000000, 5000000, 10000000)
+VOLUME_STEP_SECONDS = 3600
+RECENT_WINDOW_H = 2.0
+
+
+def bucket_index(volume) -> int:
+    return sum(1 for floor in VOLUME_BUCKETS[1:] if (volume or 0) >= floor)
+
+
+def attach_volume_history(items: list, snapshots: list, now: float, hours: int = 24) -> None:
+    by_trend = defaultdict(list)
+    for row in snapshots:
+        by_trend[(row["id"], row["started"])].append((row["ts"], row["volume"] or 0))
+    for item in items:
+        points = sorted(by_trend.get((item["id"], item.get("started_at") or 0), []))
+        item["volume_trend"] = volume_trend(points, now)
+        item["volume_series"] = volume_series(points, now, hours)
+
+
+def volume_trend(points: list, now: float):
+    points = [(ts, v) for ts, v in points if v]
+    if len(points) < 2 or points[-1][0] - points[0][0] < 900:
         return None
-    recent = series[-window - 1:-1]
-    previous = series[-2 * window - 1:-window - 1]
-    a, b = sum(recent) / window, sum(previous) / window
-    if b <= 0:
-        return 2.0 if a > 0 else None
-    return a / b
+    changes, best = [], 0
+    for ts, volume in points:
+        if volume > best:
+            if best:
+                changes.append((ts, best, volume))
+            best = volume
+    recent = [c for c in changes if now - c[0] <= RECENT_WINDOW_H * 3600]
+    last_change = changes[-1][0] if changes else points[0][0]
+    return {
+        "watched_hours": round((now - points[0][0]) / 3600, 2),
+        "current": best,
+        "from": recent[0][1] if recent else None,
+        "recent_steps": sum(bucket_index(new) - bucket_index(old) for _, old, new in recent),
+        "stalled_hours": round((now - last_change) / 3600, 2),
+        "changes": len(changes),
+    }
+
+
+def volume_series(points: list, now: float, hours: int = 24) -> list:
+    points = [(ts, v) for ts, v in points if v]
+    if not points:
+        return []
+    span = min(hours, int((now - points[0][0]) // VOLUME_STEP_SECONDS))
+    if span < 2:
+        return []
+    out = []
+    for back in range(span, -1, -1):
+        cutoff = now - back * VOLUME_STEP_SECONDS
+        seen = [v for ts, v in points if ts <= cutoff]
+        out.append(float(max(seen)) if seen else 0.0)
+    return out
 
 
 class _Entry:
@@ -158,20 +205,23 @@ def _phase(topic: dict, now: float):
         if not google.get("active"):
             return "enfriandose", "Google ya la da por terminada."
         growth = google.get("growth_pct") or 0
-        ratio = slope_ratio(google.get("series"))
         volume = google.get("volume") or 0
+        trend = google.get("volume_trend")
         since = f"hace {_hours_text(elapsed)}" if elapsed is not None else "hace poco"
-        if elapsed is not None and elapsed <= 4 and volume <= 5000 and growth >= 500 and len(topic["sources"]) <= 1:
+        stalled = trend and trend["watched_hours"] >= 2 and trend["stalled_hours"] >= 2
+        if trend and trend["recent_steps"]:
+            climb = f"de {_fmt(trend['from'])}+ a {_fmt(trend['current'])}+ búsquedas"
+            young = elapsed is not None and elapsed <= 3
+            if trend["recent_steps"] >= 2 or young:
+                prefix = f"Arrancó {since} y ha pasado" if young else "Ha pasado"
+                return "explosivo", f"{prefix} {climb} en menos de 2 h."
+            return "subiendo", f"Ha subido {climb} en las últimas 2 h."
+        if elapsed is not None and elapsed <= 4 and volume <= 5000 and growth >= 500 and len(topic["sources"]) <= 1 and not stalled:
             return "temprana", f"Aún pequeño ({_fmt(volume)}+ búsquedas), pero crece un {_pct(growth)} % desde {since}: puede despegar."
-        if elapsed is not None and elapsed <= 6 and (growth >= 500 or (ratio and ratio >= 1.4)):
-            detail = f"crece un {_pct(growth)} %" if growth else f"se multiplica por {_ratio_text(ratio)} en 2 h"
-            return "explosivo", f"Arrancó {since} y ya {detail}."
-        if ratio is not None:
-            if ratio >= 1.1:
-                return "subiendo", f"Las búsquedas de las últimas 2 h son {_ratio_text(ratio)} veces las de las 2 h anteriores."
-            if ratio >= 0.8:
-                return "pico", f"Búsquedas estables en lo alto; empezó {since}."
-            return "enfriandose", f"Las búsquedas han bajado un {_pct((1 - ratio) * 100)} % respecto a hace 2 h."
+        if stalled:
+            return "pico", f"Lleva {_hours_text(trend['stalled_hours'])} estable en {_fmt(volume)}+ búsquedas; empezó {since}."
+        if elapsed is not None and elapsed <= 6 and growth >= 500:
+            return "explosivo", f"Arrancó {since} y ya crece un {_pct(growth)} %."
         if elapsed is not None and elapsed <= 12:
             return "subiendo", f"Tendencia activa que empezó {since}."
         return "pico", f"Tendencia activa desde {since}."
@@ -215,10 +265,6 @@ def _hours_text(hours: float) -> str:
 
 def _pct(value) -> str:
     return f"{float(value):,.0f}".replace(",", ".") if abs(float(value)) >= 10000 else f"{float(value):.0f}"
-
-
-def _ratio_text(ratio) -> str:
-    return f"{ratio:.1f}".replace(".", ",") if ratio else "—"
 
 
 def _signals(topic: dict) -> list:
@@ -306,11 +352,84 @@ def build_topics(results: dict, lifecycle: dict, now: float = None) -> list:
             _attach_news(topic, members, headlines)
             topics.append(topic)
 
+    link_stories(topics)
     _score(topics, results, lifecycle, now)
     topics.sort(key=lambda t: (-t["heat"], -t["potential"]))
     for rank, topic in enumerate(topics, 1):
         topic["rank"] = rank
     return topics
+
+
+_DATE_SHORT_RE = re.compile(r"^(\d{1,2}) ([efmajsond])$")
+_MONTHS_BY_INITIAL = {
+    "e": ("enero",), "f": ("febrero",), "m": ("marzo", "mayo"), "a": ("abril", "agosto"), "j": ("junio", "julio"),
+    "s": ("septiembre",), "o": ("octubre",), "n": ("noviembre",), "d": ("diciembre",),
+}
+STORY_MIN_SCORE = 2
+MAX_ANGLES = 8
+
+
+def _plain(text: str, keep_accents: bool) -> str:
+    text = split_hashtag(text or "").lower()
+    if not keep_accents:
+        text = strip_accents(text)
+    return " ".join(re.sub(r"[^\w]+|_", " ", text).split())
+
+
+def story_phrases(title: str) -> list:
+    base = norm(title)
+    match = _DATE_SHORT_RE.match(base)
+    if match:
+        return [f"{match.group(1)} de {month}" for month in _MONTHS_BY_INITIAL[match.group(2)]]
+    words = base.split()
+    if len(base.replace(" ", "")) < 4 or base in GENERIC_TOKENS or all(w in STOPWORDS for w in words):
+        return []
+    return [base]
+
+
+def _count_phrase(phrase: str, text: str) -> int:
+    return len(re.findall(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", text)) if phrase and text else 0
+
+
+def link_stories(topics: list) -> None:
+    anchors = sorted(
+        (t for t in topics if t.get("google") and not t["utility"]),
+        key=lambda t: -((t["google"] or {}).get("volume") or 0),
+    )[:60]
+    contexts = []
+    for anchor in anchors:
+        headlines = anchor.get("_headlines") or []
+        contexts.append((
+            anchor,
+            "\n".join(norm(r) for r in (anchor["google"].get("related") or [])),
+            "\n".join(_plain(h, False) for h in headlines),
+            "\n".join(_plain(h, True) for h in headlines),
+        ))
+    for topic in topics:
+        if topic.get("google") or topic["utility"]:
+            continue
+        phrases = story_phrases(topic["title"])
+        exact = _plain(topic["title"], True)
+        accented = exact != _plain(topic["title"], False)
+        best, best_score = None, 0
+        for anchor, related_text, plain_text, accented_text in contexts:
+            if accented:
+                score = _count_phrase(exact, accented_text) if phrases else 0
+            else:
+                score = sum(2 * min(1, _count_phrase(p, related_text)) + _count_phrase(p, plain_text) for p in phrases)
+            if score > best_score:
+                best, best_score = anchor, score
+        if best is None or best_score < STORY_MIN_SCORE:
+            continue
+        topic["story"] = {"key": best["key"], "title": best["title"]}
+        if topic["niche"] == "otros" and best["niche"] != "otros":
+            topic["niche"] = best["niche"]
+            topic["niches"] = [best["niche"]] + [n for n in topic["niches"] if n not in (best["niche"], "otros")]
+        angles = best.setdefault("angles", [])
+        if len(angles) < MAX_ANGLES:
+            angles.append({"key": topic["key"], "title": topic["title"], "sources": list(topic["sources"])})
+    for topic in topics:
+        topic.pop("_headlines", None)
 
 
 def _aggregate(members: list, now: float):
@@ -339,14 +458,17 @@ def _aggregate(members: list, now: float):
     started = google.get("started_at") if google else (x.get("first_seen") if x else None)
     elapsed = (now - started) / 3600.0 if started else None
 
-    if google and google.get("series"):
-        series, series_kind = google["series"], "google"
+    google_series = (google or {}).get("volume_series") or []
+    if len(set(google_series)) >= 2:
+        series, series_kind = google_series, "google_volume"
     elif x and any(x.get("series") or []):
         series, series_kind = x["series"], "x"
     elif tiktok and tiktok.get("series"):
         series, series_kind = tiktok["series"], "tiktok"
     elif wiki and wiki.get("series"):
         series, series_kind = wiki["series"], "wikipedia"
+    elif google_series:
+        series, series_kind = google_series, "google_volume"
     else:
         series, series_kind = [], None
 
@@ -380,8 +502,9 @@ def _aggregate(members: list, now: float):
         "series": series,
         "series_kind": series_kind,
         "series_label": SERIES_LABELS.get(series_kind, ""),
-        "series_end": (google or {}).get("series_end") if series_kind == "google" else None,
-        "series_step": {"google": 960, "x": 3600, "tiktok": 86400, "wikipedia": 86400}.get(series_kind),
+        "series_end": int(now) if series_kind == "google_volume" else None,
+        "series_step": {"google_volume": VOLUME_STEP_SECONDS, "x": 3600, "tiktok": 86400, "wikipedia": 86400}.get(series_kind),
+        "volume_trend": (google or {}).get("volume_trend"),
         "metric": metric,
         "growth_pct": (google or {}).get("growth_pct"),
         "utility": is_utility(query),
@@ -407,6 +530,7 @@ def _attach_news(topic: dict, members: list, headlines: list) -> None:
             seen.add(ident)
             unique.append(item)
     topic["news"] = {"count": len(matched), "items": unique[:6]}
+    topic["_headlines"] = [n["title"] for n in unique if n.get("title")]
     if matched and "news" not in topic["sources"]:
         topic["sources"].append("news")
     headlines_text = [n["title"] for n in unique if n.get("title")]
@@ -441,10 +565,7 @@ def _score(topics: list, results: dict, lifecycle: dict, now: float) -> None:
         if google:
             reach.append(google_volume.get(google["id"], 0.3))
             if google.get("active"):
-                growth = google_growth.get(google["id"], 0.3)
-                ratio = slope_ratio(google.get("series"))
-                slope = clamp((ratio - 0.8) / 1.0) if ratio is not None else 0.0
-                momentum.append(max(growth * 0.9, slope))
+                momentum.append(_google_momentum(google_growth.get(google["id"], 0.3), google.get("volume_trend")))
             else:
                 momentum.append(0.1)
         if x:
@@ -485,6 +606,8 @@ def _score(topics: list, results: dict, lifecycle: dict, now: float) -> None:
         if news_count:
             reach.append(min(1.0, news_count / 6) * 0.7)
 
+        if topic["sources"] == ["x"] and not topic.get("story") and topic["niche"] == "otros":
+            reach = [r * 0.8 for r in reach]
         platforms = len([s for s in topic["sources"] if s != "news"])
         breadth = min(1.0, (platforms - 1) / 3) + (0.15 if news_count else 0)
         elapsed = topic.get("elapsed_hours")
@@ -511,6 +634,21 @@ def _score(topics: list, results: dict, lifecycle: dict, now: float) -> None:
         topic["remaining_hours"] = round(remaining, 1) if remaining is not None else None
         topic["potential"] = int(round(topic["heat"] * PHASE_WEIGHT[phase] * (0.6 + 0.4 * fraction)))
         topic["signals"] = _signals(topic)
+
+
+def _google_momentum(growth_rank: float, trend) -> float:
+    momentum = growth_rank * 0.9
+    if not trend:
+        return momentum
+    if trend["recent_steps"] >= 2:
+        return 1.0
+    if trend["recent_steps"] == 1:
+        return max(momentum, 0.8)
+    if trend["watched_hours"] >= 2 and trend["stalled_hours"] >= 3:
+        return min(momentum, 0.4)
+    if trend["watched_hours"] >= 2 and trend["stalled_hours"] >= 2:
+        return min(momentum, 0.6)
+    return momentum
 
 
 def niche_stats(topics: list) -> list:

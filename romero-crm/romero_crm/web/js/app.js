@@ -150,6 +150,10 @@ function nicheChip(id) {
   return `<span class="chip">${esc(nicheName(id))}</span>`;
 }
 
+function storyChip(topic) {
+  return topic.story ? `<span class="story-chip" title="Forma parte de la historia «${esc(topic.story.title)}»">${icon('link')}${esc(topic.story.title)}</span>` : '';
+}
+
 function sourceBadges(list) {
   return `<span class="srcs">${SOURCE_ORDER.filter((s) => list.includes(s))
     .map((s) => `<span class="src src-${s}"><i></i>${esc(SOURCES[s].short || SOURCES[s].label)}</span>`).join('')}</span>`;
@@ -195,9 +199,9 @@ function seriesDescriber(topic) {
   return (value, i) => {
     const back = n - 1 - i;
     switch (topic.series_kind) {
-      case 'google': {
-        const ts = (topic.series_end || Date.now() / 1000) - back * (topic.series_step || 960);
-        return { value: `${Math.round(value)} / 100`, label: 'interés relativo', title: F.clock(ts) };
+      case 'google_volume': {
+        const ts = (topic.series_end || Date.now() / 1000) - back * (topic.series_step || 3600);
+        return { value: value > 0 ? `${F.num(value)}+` : 'Sin registrar', label: 'búsquedas acumuladas', title: back === 0 ? 'Ahora' : F.clock(ts) };
       }
       case 'x':
         return { value: value > 0 ? `Nº ${Math.round(51 - value)}` : 'Fuera del top', label: 'en X', title: back === 0 ? 'Ahora' : `Hace ${back} h` };
@@ -261,6 +265,16 @@ function sourceError(id, extraButtons = '') {
     `${st.error ? `<div class="err-text">${esc(st.error)}</div>` : ''}<div class="actions"><button class="btn btn-sm" data-action="refresh">${icon('refresh')}Reintentar</button>${extraButtons}</div>`)}</div>`;
 }
 
+function tiktokLoginCard(button) {
+  return `<div class="card"><div class="card-body login-card">${icon('info')}<div>
+    <h3>TikTok ya no publica sus tendencias sin cuenta</h3>
+    <p>Creative Center forma parte ahora de <b>TikTok One</b> y solo enseña los hashtags, canciones y creadores en tendencia con la sesión iniciada. Romero CRM no usa tu cuenta ni tu contraseña, así que no puede leerlos por ti.</p>
+    <ol><li>Ábrelo con el botón e inicia sesión con tu cuenta de TikTok.</li>
+      <li>Filtra por <b>España</b> y <b>últimos 7 días</b>.</li>
+      <li>Cruza lo que veas con el Radar: un tema que ya es tendencia en Google o X y además despega en TikTok es la señal más fuerte para un vídeo vertical. En la ficha de cada tema tienes un botón para buscarlo en TikTok.</li></ol>
+    <div class="actions">${button}</div></div></div></div>`;
+}
+
 function staleNote(id) {
   const st = sourceStatus(id);
   if (!st.stale) return '';
@@ -310,7 +324,7 @@ function renderNav() {
   $('#nav').innerHTML = ROUTES.filter((r) => r.id !== 'ajustes').map((r) => {
     if (r.group) return `<div class="nav-group">${esc(r.group)}</div>`;
     const st = r.source ? sourceStatus(r.source) : null;
-    const failing = st && st.enabled !== false && st.ok === false && st.fetched_at;
+    const failing = st && st.enabled !== false && st.ok === false && st.fetched_at && !st.requires_login;
     const side = failing ? '<span class="dot err" title="Error en la fuente"></span>'
       : counts[r.id] ? `<span class="count">${counts[r.id]}</span>` : '';
     return `<a href="#/${r.id}" class="${ui.route === r.id ? 'active' : ''}">${icon(r.icon)}<span>${esc(r.label)}</span>${side}</a>`;
@@ -325,15 +339,16 @@ function renderSidebarFoot() {
     const s = st[id] || {};
     let cls = '';
     if (refreshing && ['pending', 'running'].includes(progress[id])) cls = 'run';
-    else if (s.enabled === false) cls = '';
+    else if (s.enabled === false || s.requires_login) cls = '';
     else if (s.ok) cls = 'ok';
     else if (s.fetched_at) cls = 'err';
-    return `<i class="${cls}" title="${esc(SOURCES[id].long)}: ${esc(s.ok ? 'correcto' : s.error || 'sin datos')}"></i>`;
+    return `<i class="${cls}" title="${esc(SOURCES[id].long)}: ${esc(s.ok ? 'correcto' : s.requires_login ? 'requiere cuenta' : s.error || 'sin datos')}"></i>`;
   }).join('');
   const okCount = SOURCE_ORDER.filter((id) => st[id]?.ok).length;
+  const usable = SOURCE_ORDER.filter((id) => st[id]?.enabled !== false && !st[id]?.requires_login).length;
   const updated = ui.state?.generated_at ? `Actualizado ${F.ago(ui.state.generated_at)}` : 'Sin datos todavía';
   $('#sidebar-foot').innerHTML = `
-    <div class="health"><span class="health-dots">${dots}</span><span>${refreshing ? 'Actualizando…' : `${okCount}/6 fuentes`}</span></div>
+    <div class="health"><span class="health-dots">${dots}</span><span>${refreshing ? 'Actualizando…' : `${okCount}/${usable} fuentes`}</span></div>
     <div class="updated">${esc(updated)}</div>
     <a href="#/ajustes" class="nav-foot-link ${ui.route === 'ajustes' ? 'active' : ''}">${icon('settings')}Ajustes</a>`;
 }
@@ -469,7 +484,7 @@ function topicTable(list, limit) {
     <tr tabindex="0" data-topic="${esc(t.key)}">
       <td class="rank">${i + 1}</td>
       <td><div class="t-title">${esc(t.title)}</div>
-        <div class="t-meta">${nicheChip(t.niche)}${sourceCount(t.sources)}${t.started_at ? `<span>· ${esc(F.ago(t.started_at))}</span>` : ''}</div></td>
+        <div class="t-meta">${nicheChip(t.niche)}${storyChip(t)}${sourceCount(t.sources)}${t.started_at ? `<span>· ${esc(F.ago(t.started_at))}</span>` : ''}</div></td>
       <td>${meter(t.heat)}</td>
       <td class="num"><div class="num-main">${metricMain(t)}</div><div class="num-sub">${metricSub(t)}</div></td>
       <td class="hide-sm evo"><div data-spark="${esc(t.key)}"></div></td>
@@ -570,7 +585,7 @@ const VIEWS = {
         : '<div class="small muted">Sin hora de inicio conocida: no se puede estimar la ventana.</div>';
       const signals = (t.signals || []).map((s) => `<li><i style="background:var(--src-${esc(s.source)})"></i><span>${esc(s.text)}</span></li>`).join('');
       return `<div class="card pred" data-topic="${esc(t.key)}" tabindex="0">
-        <div class="pred-top"><div><div class="pred-title">${esc(t.title)}</div><div class="row-gap mt-8">${phaseChip(t)}${nicheChip(t.niche)}</div></div>
+        <div class="pred-top"><div><div class="pred-title">${esc(t.title)}</div><div class="row-gap mt-8">${phaseChip(t)}${nicheChip(t.niche)}${storyChip(t)}</div></div>
           <div class="pred-score"><b>${t.potential}</b><span>potencial</span></div></div>
         <div class="reason">${esc(t.phase_reason || '')}</div>
         ${windowHtml}
@@ -583,7 +598,7 @@ const VIEWS = {
       <div class="card"><div class="card-body"><div class="how">
         <div><b>${icon('flame')} Calor (0–100)</b><span>Alcance (volumen o posición), impulso (crecimiento), presencia en varias plataformas y frescura.</span></div>
         <div><b>${icon('sparkles')} Potencial (0–100)</b><span>El calor ajustado por la fase y por el margen que le queda. Es lo que te interesa para publicar.</span></div>
-        <div><b>${icon('trending')} Fase</b><span>Explosivo, en ascenso, señal temprana, en pico o enfriándose, según la curva de las últimas horas.</span></div>
+        <div><b>${icon('trending')} Fase</b><span>Explosivo, en ascenso, señal temprana, en pico o enfriándose, según cómo cambian el volumen de búsquedas, la posición en X y las lecturas en las últimas horas.</span></div>
         <div><b>${icon('clock')} Ventana</b><span>Cuánto suelen durar las tendencias de ese nicho (calculado con tu propio historial) menos lo que ya lleva.</span></div>
       </div><p class="note mt-8">Son <b>estimaciones transparentes</b>, no adivinación: se basan en datos públicos y en patrones de la última semana. Úsalas para priorizar, no como garantía.</p></div></div>
       <div class="pred-grid">${cards}</div>
@@ -738,15 +753,15 @@ const VIEWS = {
     const sort = `<select class="select" id="gsort">${[['volume', 'Por volumen'], ['growth', 'Por crecimiento'], ['recent', 'Más recientes']].map(([v, l]) => `<option value="${v}" ${ui.googleSort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
     const html = `${staleNote('google')}
       <div class="card"><div class="card-head"><div><h2>${list.length} tendencias</h2><p>Fuente: Google Trends, España · ${st.mode === 'rss' ? 'modo simplificado (RSS)' : 'Trending Now'} · ${esc(F.ago(st.fetched_at))}</p></div><div class="card-tools">${seg}${sort}</div></div>
-        <div class="card-body flush">${list.length ? `<table class="ttable"><thead><tr><th>#</th><th>Tendencia</th><th class="num">Volumen</th><th class="num">Subida</th><th class="num">Inicio</th><th class="hide-sm">Últimas 24 h</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>` : emptyState('search', 'Nada con estos filtros', '')}</div></div>`;
+        <div class="card-body flush">${list.length ? `<table class="ttable"><thead><tr><th>#</th><th>Tendencia</th><th class="num">Volumen</th><th class="num">Subida</th><th class="num">Inicio</th><th class="hide-sm">Evolución</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>` : emptyState('search', 'Nada con estos filtros', '')}</div></div>`;
     return {
       html,
       mount(root) {
         $$('[data-gspark]', root).forEach((el) => {
           const g = items.find((i) => i.id === el.dataset.gspark);
           if (!g) return;
-          const fake = { series: g.series, series_kind: 'google', series_end: g.series_end, series_step: g.series_step };
-          el.replaceChildren(C.sparkline(g.series || [], { describe: seriesDescriber(fake) }));
+          const fake = { series: g.volume_series, series_kind: 'google_volume', series_end: ui.state.generated_at, series_step: 3600 };
+          el.replaceChildren(C.sparkline(g.volume_series || [], { describe: seriesDescriber(fake) }));
         });
       },
     };
@@ -778,7 +793,9 @@ const VIEWS = {
   tiktok() {
     const data = ui.state.platforms?.tiktok || {};
     const browse = extLink(data.browse_url, `${icon('external')}Abrir Creative Center`, 'btn btn-sm');
-    if (!data.hashtags?.length && !data.songs?.length) return { html: sourceError('tiktok', browse) };
+    if (!data.hashtags?.length && !data.songs?.length) {
+      return { html: sourceStatus('tiktok').requires_login ? tiktokLoginCard(extLink(data.browse_url, `${icon('external')}Abrir TikTok Creative Center`, 'btn btn-primary btn-sm')) : sourceError('tiktok', browse) };
+    }
     let tags = data.hashtags || [];
     if (ui.search) tags = tags.filter((t) => norm(t.title).includes(norm(ui.search)));
     const rows = tags.map((t) => {
@@ -817,13 +834,14 @@ const VIEWS = {
     let items = ui.state.platforms?.x || [];
     if (!items.length) return { html: sourceError('x') };
     if (ui.search) items = items.filter((t) => norm(t.title).includes(norm(ui.search)));
+    const hasVolume = items.some((t) => t.volume);
     const rows = items.map((t) => {
       const topic = topicForSource('x', t.id);
       const change = t.is_new ? '<span class="chip">Nuevo</span>' : t.rank_change > 0 ? `<span class="up">▲ ${t.rank_change}</span>` : t.rank_change < 0 ? `<span class="down">▼ ${Math.abs(t.rank_change)}</span>` : '<span class="muted">=</span>';
-      return `<tr tabindex="0" ${topic && topic.sources.length > 1 ? `data-topic="${esc(topic.key)}"` : `data-ext-url="${esc(t.url)}"`}>
+      return `<tr tabindex="0" ${topic && (topic.sources.length > 1 || topic.story) ? `data-topic="${esc(topic.key)}"` : `data-ext-url="${esc(t.url)}"`}>
         <td class="rank">${t.rank}</td>
-        <td><div class="t-title">${esc(t.title)}</div><div class="t-meta">${nicheChip(t.niche)}${topic && topic.sources.length > 1 ? sourceBadges(topic.sources) : ''}</div></td>
-        <td class="num"><div class="num-main">${t.volume ? F.num(t.volume) : '—'}</div><div class="num-sub">posts</div></td>
+        <td><div class="t-title">${esc(t.title)}</div><div class="t-meta">${nicheChip(t.niche)}${topic ? storyChip(topic) : ''}${topic && topic.sources.length > 1 ? sourceBadges(topic.sources) : ''}</div></td>
+        ${hasVolume ? `<td class="num"><div class="num-main">${t.volume ? F.num(t.volume) : '—'}</div><div class="num-sub">posts</div></td>` : ''}
         <td class="num"><div class="num-main">${t.hours_in_trends ? esc(F.hours(t.hours_in_trends)) : '<1 h'}</div><div class="num-sub">en tendencias</div></td>
         <td class="hide-sm"><div data-xspark="${esc(t.id)}"></div></td>
         <td>${change}</td></tr>`;
@@ -831,7 +849,7 @@ const VIEWS = {
     const st = sourceStatus('x');
     return {
       html: `${staleNote('x')}<div class="card"><div class="card-head"><div><h2>Tendencias en X · España</h2><p>Vía ${esc(st.mode || 'trends24')} · ${esc(F.ago(st.fetched_at))} · la curva muestra la posición hora a hora</p></div></div>
-        <div class="card-body flush"><table class="ttable"><thead><tr><th>#</th><th>Tendencia</th><th class="num">Posts</th><th class="num">Tiempo</th><th class="hide-sm">Posición 24 h</th><th>Cambio</th></tr></thead><tbody>${rows}</tbody></table></div></div>`,
+        <div class="card-body flush"><table class="ttable"><thead><tr><th>#</th><th>Tendencia</th>${hasVolume ? '<th class="num">Posts</th>' : ''}<th class="num">Tiempo</th><th class="hide-sm">Posición por hora</th><th>Cambio</th></tr></thead><tbody>${rows}</tbody></table></div></div>`,
       mount(root) {
         $$('[data-xspark]', root).forEach((el) => {
           const t = items.find((i) => i.id === el.dataset.xspark);
@@ -917,8 +935,8 @@ const VIEWS = {
     const statuses = ui.state?.sources || {};
     const rows = ['google', 'google_week', 'youtube', 'tiktok', 'x', 'wikipedia', 'news', 'efemerides'].map((id) => {
       const st = statuses[id] || {};
-      const cls = st.enabled === false ? 'off' : st.stale ? 'stale' : st.ok ? 'ok' : st.fetched_at ? 'err' : 'off';
-      const text = st.enabled === false ? 'Desactivada' : st.stale ? 'Datos antiguos' : st.ok ? 'Funcionando' : st.fetched_at ? 'Con errores' : 'Pendiente';
+      const cls = st.enabled === false || st.requires_login ? 'off' : st.stale ? 'stale' : st.ok ? 'ok' : st.fetched_at ? 'err' : 'off';
+      const text = st.enabled === false ? 'Desactivada' : st.requires_login ? 'Requiere cuenta' : st.stale ? 'Datos antiguos' : st.ok ? 'Funcionando' : st.fetched_at ? 'Con errores' : 'Pendiente';
       return `<tr><td>${esc(st.label || id)}</td><td><span class="status-pill ${cls}"><i></i>${text}</span></td><td class="num">${st.count ?? 0}</td><td>${esc(F.ago(st.fetched_at))}</td><td class="small muted" style="max-width:360px">${esc(st.error || '')}</td></tr>`;
     }).join('');
     const sourceToggles = SOURCE_ORDER.map((id) => `<label class="toggle"><input type="checkbox" data-source-toggle="${id}" ${s.sources?.[id] !== false ? 'checked' : ''}>${esc(SOURCES[id].long)}</label>`).join('');
@@ -941,7 +959,7 @@ const VIEWS = {
             <div class="card-body"><div class="small muted">Carpeta</div><div class="err-text" style="margin:4px 0 12px">${esc(s.data_dir || '')}</div>
               <button class="btn btn-sm" data-action="clear-history">${icon('database')}Borrar historial</button></div></div>
           <div class="card"><div class="card-head"><div><h2>Acerca de</h2></div></div>
-            <div class="card-body note">Romero CRM ${esc(ui.state?.app?.version || '')}. Usa solo fuentes públicas y gratuitas: Google Trends, trends24/getdaytrends (X), TikTok Creative Center, Wikimedia, Google News y búsquedas de YouTube. Algunas son webs de terceros que cambian a menudo: si una falla, el resto sigue funcionando y aquí verás el motivo.</div></div>
+            <div class="card-body note">Romero CRM ${esc(ui.state?.app?.version || '')}. Usa solo fuentes públicas y gratuitas: Google Trends, getdaytrends y trends24 (X), Wikimedia, Google News y búsquedas de YouTube. TikTok Creative Center ahora exige cuenta: el programa lo comprueba cada 6 horas por si vuelve a abrirse. Algunas son webs de terceros que cambian a menudo: si una falla, el resto sigue funcionando y aquí verás el motivo.</div></div>
         </div>
       </div>
       <div class="card"><div class="card-head"><div><h2>Estado de las fuentes</h2><p>Última consulta de cada una. Si algo falla, copia el informe y pégaselo a Claude.</p></div>
@@ -955,7 +973,7 @@ function sourcesReport() {
   const lines = [`Romero CRM ${ui.state?.app?.version || ''} · informe de fuentes · ${new Date().toLocaleString('es-ES')}`,
     `Modo: ${DESKTOP ? 'ventana propia' : 'navegador'} · ${navigator.userAgent}`];
   for (const [id, st] of Object.entries(ui.state?.sources || {})) {
-    const state = st.enabled === false ? 'DESACTIVADA' : st.ok ? (st.stale ? 'DATOS ANTIGUOS' : 'OK') : 'ERROR';
+    const state = st.enabled === false ? 'DESACTIVADA' : st.requires_login ? 'REQUIERE CUENTA' : st.ok ? (st.stale ? 'DATOS ANTIGUOS' : 'OK') : 'ERROR';
     lines.push(`- ${id}: ${state} · ${st.count ?? 0} elementos · modo ${st.mode || '—'} · ${F.ago(st.fetched_at)}${st.error ? ` · ${st.error}` : ''}`);
   }
   if (ui.state?.last_error) lines.push(`Error interno: ${ui.state.last_error}`);
@@ -1026,7 +1044,9 @@ function drawerHtml(topic, detail, loading) {
     <div class="d-body">
       ${stats}
       <div class="d-section"><h3>Por qué está aquí</h3><p class="reason" style="margin:0 0 10px">${esc(topic.phase_reason || '')}</p><ul class="signals">${signals}</ul>
-        ${topic.description ? `<p class="small muted" style="margin:10px 0 0">Wikipedia: ${esc(topic.description)}</p>` : ''}</div>
+        ${topic.description ? `<p class="small muted" style="margin:10px 0 0">Wikipedia: ${esc(topic.description)}</p>` : ''}
+        ${topic.story ? `<p class="small" style="margin:10px 0 0">Forma parte de la historia <button class="link" data-topic="${esc(topic.story.key)}">${esc(topic.story.title)}</button>: aparece en sus búsquedas relacionadas o en los mismos titulares.</p>` : ''}</div>
+      ${(topic.angles || []).length ? `<div class="d-section"><h3>Ángulos que también son tendencia</h3><p class="small muted" style="margin:0 0 8px">Temas sueltos de X o Wikipedia ligados a esta historia. Cada uno puede ser un enfoque distinto para tu vídeo.</p><div class="related">${topic.angles.map((a) => `<button class="chip" data-topic="${esc(a.key)}">${esc(a.title)}</button>`).join('')}</div></div>` : ''}
       <div class="d-section"><h3>${esc(topic.series_label || 'Evolución')}</h3><div id="d-chart"></div></div>
       <div class="d-section"><h3>Qué cuentan los medios</h3>${newsHtml}</div>
       <div class="d-section"><h3>Competencia en YouTube</h3>${ytHtml}</div>
@@ -1044,11 +1064,12 @@ function mountDrawerChart(topic) {
   const n = (topic.series || []).length;
   const xLabel = (i) => {
     const back = n - 1 - i;
-    if (topic.series_kind === 'google') return F.clock((topic.series_end || Date.now() / 1000) - back * (topic.series_step || 960));
+    if (topic.series_kind === 'google_volume') return back === 0 ? 'ahora' : F.clock((topic.series_end || Date.now() / 1000) - back * (topic.series_step || 3600));
     if (topic.series_kind === 'x') return back === 0 ? 'ahora' : `-${back} h`;
     return back === 0 ? 'último' : `-${back} d`;
   };
-  C.lineChart(el, topic.series || [], { describe, xLabel, height: 180, yFormat: (v) => (topic.series_kind === 'x' ? (v > 0 ? `${Math.round(51 - v)}º` : '') : F.num(v)) });
+  const isX = topic.series_kind === 'x';
+  C.lineChart(el, topic.series || [], { describe, xLabel, height: 180, ticks: isX ? [1, 26, 50] : null, yFormat: (v) => (isX ? (v > 0 ? `${Math.round(51 - v)}º` : '') : F.num(v)) });
 }
 
 async function openDrawer(key) {

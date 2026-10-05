@@ -21,8 +21,16 @@ MUSIC_PAGES = (
     CREATIVE_CENTER + "/inspiration/popular/music/pc/en?countryCode=ES&period=7",
 )
 HASHTAG_API = "https://ads.tiktok.com/creative_radar_api/v1/popular_trend/hashtag/list"
-BROWSE_URL = CREATIVE_CENTER + "/inspiration/popular/hashtag/pc/es?countryCode=ES&period=7"
+BROWSE_URL = "https://ads.tiktok.com/creative/creativeCenter/trends?countryCode=ES&period=7"
+LOGIN_MESSAGE = (
+    "TikTok ya solo muestra sus tendencias con la sesión iniciada en TikTok One. "
+    "Romero CRM no usa tu cuenta, así que no puede leerlas por ti: ábrelas con el botón."
+)
 _NEXT_RE = re.compile(r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+
+
+class LoginRequired(SourceError):
+    pass
 
 
 def extract_next_data(html_text: str):
@@ -169,6 +177,8 @@ def _from_api(session):
     params = {"page": 1, "limit": 50, "period": 7, "country_code": "ES", "sort_by": "popular"}
     response = check(session.get(HASHTAG_API, params=params, headers=headers, timeout=TIMEOUT), "TikTok Creative Center")
     payload = response.json()
+    if isinstance(payload, dict) and (payload.get("code") == 40101 or "permission" in str(payload.get("msg", "")).lower()):
+        raise LoginRequired(LOGIN_MESSAGE)
     for records in find_record_lists(payload, _is_hashtag):
         return records
     return []
@@ -176,17 +186,22 @@ def _from_api(session):
 
 def fetch() -> SourceResult:
     session = make_session()
-    hashtags_raw = _from_pages(session, HASHTAG_PAGES, _is_hashtag)
-    provider = "creative_center_page"
+    provider, login_required = "creative_center_api", False
+    try:
+        hashtags_raw = _from_api(session)
+    except LoginRequired:
+        hashtags_raw, login_required = [], True
+    except Exception:
+        hashtags_raw = []
     if not hashtags_raw:
-        try:
-            hashtags_raw = _from_api(session)
-            provider = "creative_center_api"
-        except Exception:
-            hashtags_raw = []
-    songs_raw = _from_pages(session, MUSIC_PAGES, _is_song)
+        hashtags_raw = _from_pages(session, HASHTAG_PAGES[:1], _is_hashtag)
+        provider = "creative_center_page"
+    songs_raw = _from_pages(session, MUSIC_PAGES[:1], _is_song) if hashtags_raw else []
     hashtags, songs = parse_hashtags(hashtags_raw), parse_songs(songs_raw)
     if not hashtags and not songs:
+        if login_required:
+            return SourceResult(source="tiktok", ok=False, error=LOGIN_MESSAGE,
+                                meta={"requires_login": True, "browse_url": BROWSE_URL})
         return failure("tiktok", SourceError(
             "TikTok no ha devuelto datos públicos ahora mismo. Puedes consultarlos en Creative Center desde el botón de esta sección."
         ))

@@ -84,52 +84,6 @@ def diag_google() -> None:
     for item in items[:12]:
         print(f"   - {item['title']!r} vol={item['volume']} crec={item['growth_pct']} activa={item['active']} "
               f"inicio={item['started_at']} cats={item['categories']} rel={item['related'][:3]} tokens={len(item['news_tokens'])}")
-    active = [i for i in items if i["active"]]
-    if active:
-        keyword = active[0]["query"]
-        variants = {
-            "A trendspy": [None, None, [["ES", keyword, 3, 0, 3]]],
-            "B periodo 2": [None, None, [["ES", keyword, 2, 0, 3]]],
-            "C sin extras": [None, None, [["ES", keyword, 3]]],
-            "D anidado": [[["ES", keyword, 3, 0, 3]]],
-            "E con nulo": [None, None, [["ES", keyword, 3, 0, 3]], None],
-            "F hl": [None, None, [["ES", keyword, 3, 0, 3]], "es"],
-            "G periodo 4": [None, None, [["ES", keyword, 4, 0, 3]]],
-        }
-        for label, payload_variant in variants.items():
-            f_req_v = json.dumps([[["jpdkv", json.dumps(payload_variant), None, "generic"]]])
-            resp = session.post(google_trends.BATCH_URL, data={"f.req": f_req_v}, headers=google_trends._HEADERS, timeout=TIMEOUT)
-            body = re.sub(r"\s+", " ", resp.text)[:220]
-            show(f"jpdkv {label}", f"{resp.status_code} {body}")
-            time.sleep(0.4)
-        page = session.get("https://trends.google.com/trending", params={"geo": "ES", "hl": "es"}, timeout=TIMEOUT)
-        show("página trending", f"{page.status_code} {len(page.text)} bytes")
-        callbacks = re.findall(r"AF_initDataCallback\(\{key: '([^']+)'", page.text)
-        show("AF_initDataCallback", callbacks[:12])
-        for rpc in ("i0OFE", "jpdkv", "w4opAf"):
-            show(f"menciones {rpc} en la página", page.text.count(rpc))
-        numeric = re.findall(r"\[(?:\d{1,3},){40,}\d{1,3}\]", page.text)
-        show("arrays numéricos largos", len(numeric))
-        for arr in numeric[:2]:
-            snippet(arr, 300)
-        for match in list(re.finditer(r"data:", page.text))[:3]:
-            snippet(page.text[match.start(): match.start() + 400], 400)
-        scripts = re.findall(r'<script[^>]+src="([^"]+)"', page.text)
-        show("scripts", scripts[:8])
-        for match in re.finditer(r"jpdkv", page.text):
-            snippet(page.text[max(0, match.start() - 200): match.start() + 300], 500)
-            break
-        for src in scripts[:6]:
-            url = src if src.startswith("http") else "https://trends.google.com" + src
-            try:
-                js = session.get(url, timeout=TIMEOUT).text
-            except Exception as exc:
-                show("js error", exc)
-                continue
-            hits = [m.start() for m in re.finditer("jpdkv", js)]
-            show(f"js {url[-60:]}", f"{len(js)} bytes, jpdkv x{len(hits)}")
-            for start in hits[:2]:
-                snippet(js[max(0, start - 400): start + 400], 800)
     tokens = next((i["news_tokens"] for i in items if i["news_tokens"]), None)
     show("ejemplo de tokens de noticias", json.dumps(tokens, ensure_ascii=False)[:300] if tokens else None)
     if tokens:
@@ -141,7 +95,7 @@ def diag_google() -> None:
     show("rss tendencias", len(rss))
     for item in rss[:4]:
         print(f"   - {item['title']!r} vol={item['volume']} noticias={len(item['news'])}")
-    week = google_trends.fetch(hours=168, timeline_limit=0)
+    week = google_trends.fetch(hours=168)
     show("7 días ok", week.ok)
     show("7 días tendencias", len(week.items))
     show("7 días terminadas", sum(1 for i in week.items if not i["active"]))
@@ -401,7 +355,8 @@ def diag_pipeline() -> None:
         state = engine.get_state()
     show("error interno", state.get("last_error"))
     for source, info in state["sources"].items():
-        print(f"   · {source:<12} ok={info['ok']} n={info['count']} modo={info['mode']} error={(info['error'] or '')[:120]}")
+        print(f"   · {source:<12} ok={info['ok']} n={info['count']} modo={info['mode']} cuenta={info.get('requires_login')} "
+              f"error={(info['error'] or '')[:120]}")
     wiki_items = (state.get("platforms") or {}).get("wikipedia") or []
     show("wikipedia con descripción", f"{sum(1 for i in wiki_items if i.get('description'))}/{len(wiki_items)}")
     topics = state.get("topics") or []
@@ -410,6 +365,15 @@ def diag_pipeline() -> None:
         print(f"   {topic['rank']:>2}. calor={topic['heat']:>3} pot={topic['potential']:>3} {topic['phase']:<11} {topic['niche']:<15} "
               f"{','.join(topic['sources']):<34} {topic['title']!r}{' [utilitaria]' if topic['utility'] else ''}")
         print(f"       razón: {topic['phase_reason']}")
+        if topic.get("story") or topic.get("angles"):
+            print(f"       historia: {(topic.get('story') or {}).get('title')} · ángulos: {[a['title'] for a in topic.get('angles', [])]}")
+    linked = [t for t in topics if t.get("story")]
+    show("temas enlazados a una historia", len(linked))
+    for topic in linked[:25]:
+        print(f"   - {topic['title']!r} ({','.join(topic['sources'])}, {topic['niche']}) -> {topic['story']['title']!r}")
+    visible = [t for t in topics if not t["utility"]]
+    others = [t for t in visible if t["niche"] == "otros"]
+    show("sin nicho (otros)", f"{len(others)}/{len(visible)} · {[t['title'] for t in others[:25]]}")
     show("kpis", json.dumps(state.get("kpis"), ensure_ascii=False))
     show("nichos", [(n["id"], n["count"]) for n in state.get("niche_stats", [])][:12])
     show("efemérides destacadas", [(h["date"], h["years_ago"], h["title"]) for h in state["efemerides"]["highlights"][:8]])

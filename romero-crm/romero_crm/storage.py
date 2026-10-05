@@ -28,6 +28,11 @@ CREATE TABLE IF NOT EXISTS wiki_days (
     day TEXT NOT NULL, project TEXT NOT NULL, article TEXT NOT NULL, title TEXT, views INTEGER,
     rank INTEGER, niche TEXT, PRIMARY KEY (day, project, article)
 );
+CREATE TABLE IF NOT EXISTS google_snapshots (
+    id TEXT NOT NULL, started INTEGER NOT NULL, ts INTEGER NOT NULL, volume INTEGER,
+    PRIMARY KEY (id, started, ts)
+);
+CREATE INDEX IF NOT EXISTS idx_google_snapshots_ts ON google_snapshots (ts);
 """
 
 
@@ -103,6 +108,25 @@ class Storage:
             )
             self._db.commit()
 
+    def record_google_snapshots(self, items: list, ts: float) -> None:
+        rows = [(i["id"], i.get("started_at") or 0, int(ts), int(i.get("volume") or 0))
+                for i in items if i.get("active") and i.get("volume")]
+        self.add_google_snapshots(rows)
+
+    def add_google_snapshots(self, rows: list) -> None:
+        with self._lock:
+            self._db.executemany(
+                "INSERT OR IGNORE INTO google_snapshots (id, started, ts, volume) VALUES (?, ?, ?, ?)", rows
+            )
+            self._db.commit()
+
+    def google_snapshots(self, since_ts: float) -> list:
+        with self._lock:
+            cur = self._db.execute(
+                "SELECT id, started, ts, volume FROM google_snapshots WHERE ts >= ? ORDER BY ts", (int(since_ts),)
+            )
+            return [dict(r) for r in cur.fetchall()]
+
     def record_topics(self, topics: list, ts: float) -> None:
         day = local_day(ts)
         with self._lock:
@@ -168,6 +192,7 @@ class Storage:
         day = local_day(cutoff)
         with self._lock:
             self._db.execute("DELETE FROM observations WHERE ts < ?", (int(time.time() - 45 * 86400),))
+            self._db.execute("DELETE FROM google_snapshots WHERE ts < ?", (int(time.time() - 3 * 86400),))
             self._db.execute("DELETE FROM google_trends WHERE started < ?", (int(cutoff),))
             self._db.execute("DELETE FROM topic_days WHERE day < ?", (day,))
             self._db.execute("DELETE FROM wiki_days WHERE day < ?", (day,))
@@ -175,7 +200,7 @@ class Storage:
 
     def clear_history(self) -> None:
         with self._lock:
-            for table in ("google_trends", "topic_days", "observations", "wiki_days"):
+            for table in ("google_trends", "topic_days", "observations", "wiki_days", "google_snapshots"):
                 self._db.execute(f"DELETE FROM {table}")
             self._db.commit()
         for path in self.cache_dir.glob("source-*.json"):

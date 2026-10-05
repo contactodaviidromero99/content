@@ -137,19 +137,21 @@ export function lineChart(container, series, opts = {}) {
   }
   const width = Math.max(280, container.clientWidth || 480);
   const height = opts.height || 190;
-  const padL = 34, padR = 10, padT = 10, padB = 24;
-  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': opts.ariaLabel || 'Evolución temporal' }, container);
   const max = Math.max(...values, 1);
-  const ticks = niceTicks(max, 3);
-  const top = ticks[ticks.length - 1] || max;
+  const ticks = opts.ticks || niceTicks(max, 3);
+  const tickLabels = ticks.map((t) => (opts.yFormat ? opts.yFormat(t) : String(t)));
+  const padL = Math.max(34, Math.ceil(Math.max(...tickLabels.map((l) => String(l).length)) * 6.6) + 12);
+  const padR = 10, padT = 10, padB = 24;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': opts.ariaLabel || 'Evolución temporal' }, container);
+  const top = Math.max(...ticks) || max;
   const y = (v) => padT + (height - padT - padB) * (1 - v / top);
   const step = (width - padL - padR) / (values.length - 1);
   const x = (i) => padL + i * step;
-  for (const t of ticks) {
+  ticks.forEach((t, index) => {
     svgEl('line', { x1: padL, x2: width - padR, y1: y(t), y2: y(t), class: t === 0 ? 'base-line' : 'grid-line' }, svg);
     const label = svgEl('text', { x: padL - 6, y: y(t) + 3.5, 'text-anchor': 'end', class: 'axis-label' }, svg);
-    label.textContent = opts.yFormat ? opts.yFormat(t) : String(t);
-  }
+    label.textContent = tickLabels[index];
+  });
   const labelEvery = Math.max(1, Math.round(values.length / 5));
   for (let i = 0; i < values.length; i += labelEvery) {
     const anchor = i === 0 ? 'start' : x(i) > width - padR - 28 ? 'end' : 'middle';
@@ -217,11 +219,11 @@ export function columns(container, rows, opts = {}) {
   const ticks = niceTicks(max, 3);
   const top = ticks[ticks.length - 1];
   const y = (v) => padT + (height - padT - padB) * (1 - v / top);
-  for (const t of ticks) {
+  ticks.forEach((t, index) => {
     svgEl('line', { x1: padL, x2: width - padR, y1: y(t), y2: y(t), class: t === 0 ? 'base-line' : 'grid-line' }, svg);
     const label = svgEl('text', { x: padL - 6, y: y(t) + 3.5, 'text-anchor': 'end', class: 'axis-label' }, svg);
-    label.textContent = opts.yFormat ? opts.yFormat(t) : String(t);
-  }
+    label.textContent = tickLabels[index];
+  });
   const band = (width - padL - padR) / rows.length;
   const w = Math.min(24, band * 0.62);
   const labelEvery = opts.labelEvery || (rows.length > 12 ? 3 : 1);

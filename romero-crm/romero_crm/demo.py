@@ -9,6 +9,7 @@ import time
 from email.utils import format_datetime
 from urllib.parse import quote
 
+from .analysis import VOLUME_BUCKETS
 from .sources import efemerides, google_trends, news, tiktok, wikipedia, x_trends, youtube
 from .sources.base import SourceResult
 
@@ -221,14 +222,23 @@ class DemoData:
 
     def _google(self):
         items = google_trends.parse_trending(google_trends.parse_batch_response(self.google_payload(GOOGLE_24H), "i0OFE"))
-        curves = {k: _curve(shape, started) for k, _v, _g, started, _e, _t, _r, shape, _n in GOOGLE_24H}
-        timeline_text = _batch_text("jpdkv", [[[k, v] for k, v in curves.items()]])
-        series = google_trends.parse_timelines(google_trends.parse_batch_response(timeline_text, "jpdkv"))
-        end = int(self.now) // 960 * 960
+        return SourceResult(source="google", ok=True, items=items, meta={"mode": "demo", "seed_snapshots": self.google_snapshots(items)})
+
+    def google_snapshots(self, items: list) -> list:
+        shapes = {k: (shape, started) for k, _v, _g, started, _e, _t, _r, shape, _n in GOOGLE_24H}
+        rows = []
         for item in items:
-            if item["query"] in series:
-                item.update(series=series[item["query"]], series_end=end, series_step=960)
-        return SourceResult(source="google", ok=True, items=items, meta={"mode": "demo"})
+            if not item["active"] or item["query"] not in shapes:
+                continue
+            curve = _curve(*shapes[item["query"]])
+            total, running = sum(curve) or 1.0, 0.0
+            for index, value in enumerate(curve):
+                running += value
+                ts = int(self.now - (len(curve) - 1 - index) * 960)
+                volume = max((b for b in VOLUME_BUCKETS if b <= item["volume"] * running / total), default=0)
+                if index % 2 == 0 and ts >= item["started_at"] and volume:
+                    rows.append((item["id"], item["started_at"], ts, volume))
+        return rows
 
     def _google_week(self):
         pools = {
@@ -313,10 +323,8 @@ class DemoData:
         return f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script></html>'
 
     def _tiktok(self):
-        tags_raw = next(tiktok.find_record_lists(tiktok.extract_next_data(self.tiktok_html()), tiktok._is_hashtag), [])
-        songs_raw = next(tiktok.find_record_lists(tiktok.extract_next_data(self.tiktok_music_html()), tiktok._is_song), [])
-        meta = {"provider": "demo", "songs": tiktok.parse_songs(songs_raw), "browse_url": tiktok.BROWSE_URL, "period_days": 7}
-        return SourceResult(source="tiktok", ok=True, items=tiktok.parse_hashtags(tags_raw), meta=meta)
+        return SourceResult(source="tiktok", ok=False, error=tiktok.LOGIN_MESSAGE,
+                            meta={"requires_login": True, "browse_url": tiktok.BROWSE_URL})
 
     def _wikipedia(self):
         today = dt.date.fromtimestamp(self.now)

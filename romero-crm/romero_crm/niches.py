@@ -68,6 +68,9 @@ KEYWORDS = {
         "fiscal general", "cgpj", "investidura", "mocion de censura", "parlament", "generalitat", "junta de andalucia",
         "xunta", "comunidad de madrid", "ayuntamiento", "alcalde", "alcaldesa", "diputado", "diputada",
         "corrupcion", "imputado", "imputada", "sumario", "dimision", "dimite", "ley de", "reforma",
+        "votar", "voto", "votos", "urnas", "pucherazo", "escrutinio", "sondeo", "sondeos", "campana electoral",
+        "mitin", "adelanto electoral", "elecciones anticipadas", "elecciones generales", "candidato", "candidata",
+        "papeleta", "voto por correo", "jornada electoral", "cortes generales", "disolucion de las cortes",
     ],
     "internacional": [
         "trump", "donald trump", "biden", "kamala harris", "putin", "zelenski", "ucrania", "rusia", "israel",

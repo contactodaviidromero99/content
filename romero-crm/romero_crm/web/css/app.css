@@ -311,6 +311,8 @@ select.select {
   mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
 }
 .t-meta .chip { height: 19px; padding: 0 7px; border-color: transparent; font-size: 11px; flex: none; }
+.story-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 180px; height: 19px; padding: 0 7px; border-radius: 999px; background: var(--accent-soft); color: var(--text-2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.story-chip .icon { width: 11px; height: 11px; flex: none; }
 .t-meta .srcs { flex-wrap: nowrap; gap: 7px; flex: none; }
 .tabnum { font-variant-numeric: tabular-nums; }
 .num-main { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -555,6 +557,9 @@ span[data-icon] { display: inline-flex; }
 .row-gap { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .link { color: var(--accent-strong); font-weight: 600; cursor: pointer; }
 .link:hover { text-decoration: underline; }
+button.link { background: none; border: 0; padding: 0; font-size: inherit; }
+button.chip { cursor: pointer; }
+button.chip:hover { border-color: var(--accent); }
 
 @media (max-width: 1320px) {
   .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -628,3 +633,9 @@ tr:hover .src-dot { border-color: var(--surface-2); }
 .thumb-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ttable td.evo { padding-left: 14px; }
 .loading-screen > .icon { width: 34px; height: 34px; color: var(--muted); }
+
+.login-card { display: flex; gap: 14px; align-items: flex-start; max-width: 760px; }
+.login-card > .icon { width: 22px; height: 22px; color: var(--accent-strong); margin-top: 2px; }
+.login-card h3 { margin: 0 0 6px; font-size: 16px; }
+.login-card p { margin: 0 0 10px; color: var(--text-2); line-height: 1.55; }
+.login-card ol { margin: 0 0 14px; padding-left: 20px; color: var(--text-2); line-height: 1.6; }

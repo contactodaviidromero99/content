@@ -140,6 +140,34 @@ class TikTokTests(unittest.TestCase):
         songs_raw = next(tiktok.find_record_lists(tiktok.extract_next_data(demo.tiktok_music_html()), tiktok._is_song))
         self.assertEqual(len(tiktok.parse_songs(songs_raw)), 6)
 
+    def test_login_wall_is_reported_honestly(self):
+        class FakeResponse:
+            def __init__(self, status, text="", payload=None):
+                self.status_code, self.text, self._payload = status, text, payload
+
+            def json(self):
+                return self._payload
+
+        class FakeSession:
+            calls = []
+
+            def get(self, url, **kwargs):
+                self.calls.append(url)
+                if "creative_radar_api" in url:
+                    return FakeResponse(200, payload={"code": 40101, "msg": "no permission"})
+                return FakeResponse(200, text="<html><title>TikTok One Creative Suite</title></html>")
+
+        original = tiktok.make_session
+        tiktok.make_session = FakeSession
+        try:
+            result = tiktok.fetch()
+        finally:
+            tiktok.make_session = original
+        self.assertFalse(result.ok)
+        self.assertTrue(result.meta["requires_login"])
+        self.assertIn("TikTok One", result.error)
+        self.assertLessEqual(len(FakeSession.calls), 2)
+
     def test_snake_case_api_records(self):
         records = [{"hashtag_name": "historia", "publish_cnt": 100, "video_views": 2000, "rank": 1, "rank_diff": 3,
                     "rank_diff_type": 2, "industry_info": {"value": "Education"}}]
@@ -239,6 +267,63 @@ class AnalysisTests(unittest.TestCase):
         results = {"google": SourceResult(source="google", ok=True, items=google_trends.parse_trending(payload))}
         topics = analysis.build_topics(results, {}, time.time())
         self.assertEqual(sorted(t["key"] for t in topics), ["elecciones", "eleccionesbrasil"])
+
+    def test_own_volume_history_drives_phase_momentum_and_curve(self):
+        demo = DemoData()
+        now = demo.now
+        payload = google_trends.parse_batch_response(demo.google_payload([
+            ("despegue", 20000, 1000, 5.0, None, [17], [], "rising", []),
+            ("estancado", 50000, 1000, 10.0, None, [4], [], "peak", []),
+        ]), "i0OFE")
+        items = google_trends.parse_trending(payload)
+        started = {i["id"]: i["started_at"] for i in items}
+        snapshots = [{"id": "despegue", "started": started["despegue"], "ts": int(now - h * 3600), "volume": v}
+                     for h, v in ((4.5, 2000), (3, 5000), (1.5, 10000), (0.5, 20000))]
+        snapshots += [{"id": "estancado", "started": started["estancado"], "ts": int(now - h * 3600), "volume": 50000}
+                      for h in (6, 4, 2, 0.2)]
+        analysis.attach_volume_history(items, snapshots, now)
+        by_id = {i["id"]: i for i in items}
+        self.assertEqual(by_id["despegue"]["volume_trend"]["recent_steps"], 2)
+        self.assertEqual(by_id["despegue"]["volume_series"][-1], 20000)
+        self.assertEqual(len(by_id["despegue"]["volume_series"]), 5)
+        self.assertGreaterEqual(by_id["estancado"]["volume_trend"]["stalled_hours"], 6)
+
+        from romero_crm.sources.base import SourceResult
+        topics = {t["key"]: t for t in analysis.build_topics({"google": SourceResult(source="google", ok=True, items=items)}, {}, now)}
+        self.assertEqual(topics["despegue"]["phase"], "explosivo")
+        self.assertIn("de 5 mil+ a 20 mil+", topics["despegue"]["phase_reason"])
+        self.assertEqual(topics["despegue"]["series_kind"], "google_volume")
+        self.assertEqual(topics["estancado"]["phase"], "pico")
+        self.assertIn("estable en 50 mil+", topics["estancado"]["phase_reason"])
+        self.assertLessEqual(topics["estancado"]["heat_parts"]["impulso"], 0.4)
+
+    def test_loose_x_trends_link_to_their_story(self):
+        from romero_crm.sources.base import SourceResult
+        demo = DemoData()
+        payload = google_trends.parse_batch_response(demo.google_payload([
+            ("elecciones", 200000, 1000, 5.0, None, [14], ["elecciones generales", "29 de noviembre"], "rising", []),
+        ]), "i0OFE")
+        headlines = [
+            "El PSOE celebra que las elecciones del 29 de noviembre llegan con ventaja",
+            "Sánchez disuelve las Cortes y convoca elecciones",
+            "El PSOE prepara la campaña de las elecciones",
+        ]
+        results = {
+            "google": SourceResult(source="google", ok=True, items=google_trends.parse_trending(payload)),
+            "x": x_trends_result(["29-N", "PSOE", "Cortés", "Esperan"]),
+            "news": SourceResult(source="news", ok=True, items=[
+                {"title": h, "url": f"https://example.com/{i}", "source": "Demo", "section": "espana"} for i, h in enumerate(headlines)
+            ]),
+        }
+        topics = {t["title"]: t for t in analysis.build_topics(results, {}, time.time())}
+        self.assertEqual(topics["29-N"]["story"]["key"], "elecciones")
+        self.assertEqual(topics["29-N"]["niche"], "politica")
+        self.assertEqual(topics["PSOE"]["story"]["key"], "elecciones")
+        self.assertNotIn("story", topics["Cortés"])
+        self.assertNotIn("story", topics["Esperan"])
+        self.assertEqual({a["title"] for a in topics["Elecciones"]["angles"]}, {"29-N", "PSOE"})
+        self.assertTrue(all("_headlines" not in t for t in topics.values()))
+        self.assertLess(topics["Esperan"]["heat"], topics["29-N"]["heat"])
 
     def test_no_false_merge_on_generic_city(self):
         demo = DemoData()

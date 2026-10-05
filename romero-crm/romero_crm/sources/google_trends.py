@@ -3,7 +3,6 @@ from __future__ import annotations
 import html
 import json
 import re
-import time
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
@@ -16,8 +15,6 @@ BATCH_URL = "https://trends.google.com/_/TrendsUi/data/batchexecute"
 RSS_URL = "https://trends.google.com/trending/rss"
 GEO = "ES"
 LANG = "es"
-TIMELINE_PERIOD_24H = 3
-TIMELINE_STEP_SECONDS = 960
 _HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
     "Origin": "https://trends.google.com",
@@ -193,25 +190,6 @@ def fetch_rss(session) -> list:
     return parse_rss(response.text)
 
 
-def parse_timelines(payload) -> dict:
-    rows = payload[0] if isinstance(payload, list) and payload and isinstance(payload[0], list) else []
-    series = {}
-    for row in rows:
-        if isinstance(row, list) and len(row) > 1 and isinstance(row[0], str) and isinstance(row[1], list):
-            series[row[0]] = [float(v) if isinstance(v, (int, float)) else 0.0 for v in row[1]]
-    return series
-
-
-def fetch_timelines(session, keywords, chunk_size: int = 10) -> dict:
-    result = {}
-    for start in range(0, len(keywords), chunk_size):
-        chunk = keywords[start:start + chunk_size]
-        payload = [None, None, [[GEO, kw, TIMELINE_PERIOD_24H, 0, 3] for kw in chunk]]
-        result.update(parse_timelines(_batch(session, "jpdkv", payload)))
-        time.sleep(0.4)
-    return result
-
-
 def fetch_news_by_tokens(tokens, max_news: int = 4) -> list:
     if not tokens:
         return []
@@ -233,22 +211,7 @@ def _merge_rss(items: list, rss_items: list) -> None:
             item["picture"] = extra["picture"]
 
 
-def attach_timelines(session, items: list, limit: int) -> None:
-    candidates = [i for i in items if i["active"]][:limit]
-    if not candidates:
-        return
-    fetched_at = int(time.time())
-    end = fetched_at // TIMELINE_STEP_SECONDS * TIMELINE_STEP_SECONDS
-    series = fetch_timelines(session, [i["query"] for i in candidates])
-    for item in candidates:
-        values = series.get(item["query"])
-        if values:
-            item["series"] = values
-            item["series_end"] = end
-            item["series_step"] = TIMELINE_STEP_SECONDS
-
-
-def fetch(hours: int = 24, timeline_limit: int = 30) -> SourceResult:
+def fetch(hours: int = 24) -> SourceResult:
     source_id = "google" if hours <= 24 else "google_week"
     session = make_session()
     meta = {"mode": "trending_now", "hours": hours}
@@ -265,15 +228,9 @@ def fetch(hours: int = 24, timeline_limit: int = 30) -> SourceResult:
         except Exception:
             return failure(source_id, exc)
 
-    if source_id == "google":
-        if meta["mode"] == "trending_now":
-            try:
-                _merge_rss(items, fetch_rss(session))
-            except Exception:
-                pass
-        if timeline_limit:
-            try:
-                attach_timelines(session, items, timeline_limit)
-            except Exception as exc:
-                meta["timeline_error"] = str(exc)[:200]
+    if source_id == "google" and meta["mode"] == "trending_now":
+        try:
+            _merge_rss(items, fetch_rss(session))
+        except Exception:
+            pass
     return SourceResult(source=source_id, ok=True, items=items, meta=meta)
