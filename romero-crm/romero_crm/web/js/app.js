@@ -944,11 +944,24 @@ const VIEWS = {
             <div class="card-body note">Romero CRM ${esc(ui.state?.app?.version || '')}. Usa solo fuentes públicas y gratuitas: Google Trends, trends24/getdaytrends (X), TikTok Creative Center, Wikimedia, Google News y búsquedas de YouTube. Algunas son webs de terceros que cambian a menudo: si una falla, el resto sigue funcionando y aquí verás el motivo.</div></div>
         </div>
       </div>
-      <div class="card"><div class="card-head"><div><h2>Estado de las fuentes</h2><p>Última consulta de cada una</p></div><button class="btn btn-sm" data-action="refresh">${icon('refresh')}Actualizar ahora</button></div>
+      <div class="card"><div class="card-head"><div><h2>Estado de las fuentes</h2><p>Última consulta de cada una. Si algo falla, copia el informe y pégaselo a Claude.</p></div>
+        <div class="card-tools"><button class="btn btn-sm" data-action="copy-report">${icon('copy')}Copiar informe</button><button class="btn btn-sm" data-action="refresh">${icon('refresh')}Actualizar ahora</button></div></div>
         <div class="card-body"><table class="dtable"><thead><tr><th>Fuente</th><th>Estado</th><th class="num">Elementos</th><th>Última vez</th><th>Detalle</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
     return { html };
   },
 };
+
+function sourcesReport() {
+  const lines = [`Romero CRM ${ui.state?.app?.version || ''} · informe de fuentes · ${new Date().toLocaleString('es-ES')}`,
+    `Modo: ${DESKTOP ? 'ventana propia' : 'navegador'} · ${navigator.userAgent}`];
+  for (const [id, st] of Object.entries(ui.state?.sources || {})) {
+    const state = st.enabled === false ? 'DESACTIVADA' : st.ok ? (st.stale ? 'DATOS ANTIGUOS' : 'OK') : 'ERROR';
+    lines.push(`- ${id}: ${state} · ${st.count ?? 0} elementos · modo ${st.mode || '—'} · ${F.ago(st.fetched_at)}${st.error ? ` · ${st.error}` : ''}`);
+  }
+  if (ui.state?.last_error) lines.push(`Error interno: ${ui.state.last_error}`);
+  lines.push(`Temas en el radar: ${ui.state?.topics?.length ?? 0}`);
+  return lines.join('\n');
+}
 
 function isUtilityTitle(item) {
   const topic = topicForSource('google', item.id);
@@ -1115,6 +1128,7 @@ document.addEventListener('click', async (event) => {
   if (action === 'close-drawer') return closeDrawer();
   if (action === 'show-all') { ui.showAll = true; return renderView(); }
   if (action === 'copy-brief') return copyText($('#brief')?.textContent || '');
+  if (action === 'copy-report') return copyText(sourcesReport());
   if (action === 'clear-history') {
     if (confirm('¿Borrar todo el historial guardado? Las tendencias actuales se volverán a descargar.')) {
       await post('/api/clear-history');
