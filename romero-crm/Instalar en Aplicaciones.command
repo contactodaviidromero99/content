@@ -15,7 +15,7 @@ echo "  Preparando Romero CRM (la primera vez tarda 1-2 minutos)…"
 
 mkdir -p "$HOME/Applications"
 rm -rf "$APP"
-osacompile -o "$APP" -e "do shell script \"/bin/bash '$DIR/scripts/run.sh' > /dev/null 2>&1 &\"" || {
+osacompile -o "$APP" -e "do shell script \"/bin/bash '$DIR/scripts/run.sh' > /dev/null 2>&1 &\"" 2>/dev/null || {
   echo "No se pudo crear la aplicación."
   exit 1
 }
