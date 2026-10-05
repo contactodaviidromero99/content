@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
 from urllib.parse import quote
 
 from ..net import APP_UA, TIMEOUT, SourceError, check, make_session
@@ -121,6 +122,29 @@ def build_items(days: list, descriptions: dict) -> list:
     return items
 
 
+_DESC_CACHE = {}
+
+
+def _describe(session, rows: list, errors: list) -> None:
+    if len(_DESC_CACHE) > 5000:
+        _DESC_CACHE.clear()
+    by_project = {}
+    for row in rows:
+        if (row["project"], row["article"]) not in _DESC_CACHE:
+            by_project.setdefault(row["project"], []).append(row["article"])
+    for project, articles in by_project.items():
+        for attempt in range(2):
+            try:
+                for article, info in fetch_descriptions(session, project, articles).items():
+                    _DESC_CACHE[(project, article)] = info
+                break
+            except Exception as exc:
+                if attempt == 0:
+                    time.sleep(2.5)
+                else:
+                    errors.append(f"descripciones {project}: {exc}")
+
+
 def fetch(today: dt.date = None) -> SourceResult:
     session = make_session(APP_UA)
     today = today or dt.datetime.now(dt.timezone.utc).date()
@@ -137,17 +161,15 @@ def fetch(today: dt.date = None) -> SourceResult:
                 days.append((cursor, rows))
         if not days:
             raise SourceError("Wikipedia aún no ha publicado los datos de ayer.")
-        descriptions = {}
-        by_project = {}
-        for row in days[0][1][:TOP_N]:
-            by_project.setdefault(row["project"], []).append(row["article"])
-        for project, articles in by_project.items():
-            try:
-                for article, info in fetch_descriptions(session, project, articles).items():
-                    descriptions[(project, article)] = info
-            except Exception:
-                continue
-        items = build_items(days, descriptions)
+        errors = []
+        _describe(session, days[0][1][:TOP_N], errors)
+        items = build_items(days, _DESC_CACHE)
     except Exception as exc:
         return failure("wikipedia", exc)
-    return SourceResult(source="wikipedia", ok=True, items=items, meta={"day": days[0][0].isoformat(), "days": len(days)})
+    meta = {
+        "day": days[0][0].isoformat(),
+        "days": len(days),
+        "described": sum(1 for i in items if i.get("description")),
+        "errors": errors[:3],
+    }
+    return SourceResult(source="wikipedia", ok=True, items=items, meta=meta)

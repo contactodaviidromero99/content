@@ -75,7 +75,7 @@ def fetch_day(session, month: int, day: int, cache_dir: Path) -> dict:
             try:
                 response = session.get(template.format(m=month, d=day), timeout=TIMEOUT)
                 if response.status_code == 429 and attempt == 0:
-                    time.sleep(3)
+                    time.sleep(5)
                     continue
                 check(response, "Wikipedia (efemérides)")
                 data = response.json()
@@ -149,7 +149,7 @@ def fetch(cache_dir: Path, days: int = 30, today: dt.date = None) -> SourceResul
             if "429" in str(exc):
                 break
         if not cached:
-            time.sleep(0.4)
+            time.sleep(1.0)
     return SourceResult(
         source="efemerides",
         ok=True,

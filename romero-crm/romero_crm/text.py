@@ -46,6 +46,8 @@ luis luka manuel manu marc marcos margarita maria mario marta martin mateo migue
 nicolas norma oscar pablo paco paola patricia pau paula pedro pepe pilar rafa rafael ramon raquel raul ricardo
 roberto rocio rodrigo rosa rosalia ruben salvador samuel santiago sara sergio silvia sofia susana teresa tomas
 vanesa vicente victor vinicius xavi yolanda donald kamala emmanuel vladimir volodimir benjamin giorgia ursula
+estrella macarena inmaculada montserrat nuria eugenia blanca concha encarna pastora rocio isabel lourdes amparo
+jaume jordi joan pere marti arnau oriol aitor iker unai jon mikel asier inigo gorka xabier
 taylor kylian jude lamine novak jannik max lewis kim elon mark steve bill jeff sam
 """.split())
 
@@ -92,6 +94,7 @@ def recase(text: str, mapping: dict) -> str:
                     words[nxt] = following[:1].upper() + following[1:]
                     break
     out = " ".join(words)
+    out = re.sub(r"\bc\. ?f\.", "C. F.", out)
     out = out[:1].upper() + out[1:]
     return re.sub(r"(\s[-–]\s)(\w)", lambda m: m.group(1) + m.group(2).upper(), out)
 

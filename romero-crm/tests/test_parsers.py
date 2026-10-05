@@ -107,6 +107,27 @@ class XTests(unittest.TestCase):
         self.assertEqual([i["title"] for i in items], ["#Foo", "Bar"])
         self.assertEqual(items[0]["volume"], 25300)
 
+    def test_getdaytrends_history_from_sparklines(self):
+        def row(pos, name, points):
+            grid = "".join(f'<polyline class="grid-h" points="0,{y} 140,{y}"></polyline>' for y in range(0, 60, 10))
+            return (f'<tr><th class="pos">{pos}</th><td class="main"><a href="/spain/trend/{name}/">{name}</a></td>'
+                    f'<td class="graph"><svg viewbox="0 -2 140 54"><g class="grid-h">{grid}</g>'
+                    f'<polyline points=""></polyline><polyline points="{points}"></polyline></svg></td></tr>')
+
+        html = '<table class="trends">' + "".join([
+            row(1, "Nuevo", "120,50 140,0 "),
+            row(2, "Veterano", "0,9 20,7 40,5 60,4 80,3 100,2 120,1 140,1 "),
+            row(3, "Bajando", "100,0 120,0 140,2 "),
+        ]) + "</table>"
+        items = {i["title"]: i for i in x_trends.build_items(x_trends.parse_getdaytrends(html, now=1_000_000), now=1_000_000)}
+        self.assertTrue(items["Nuevo"]["is_new"])
+        self.assertEqual(items["Nuevo"]["hours_in_trends"], 1)
+        self.assertEqual(items["Veterano"]["hours_in_trends"], 8)
+        self.assertEqual(items["Veterano"]["best_rank"], 2)
+        self.assertEqual(items["Veterano"]["first_seen"], 1_000_000 - 7 * 3600)
+        self.assertEqual(items["Bajando"]["rank_change"], -2)
+        self.assertEqual(len(items["Veterano"]["series"]), 8)
+
 
 class TikTokTests(unittest.TestCase):
     def test_next_data_hashtags_and_songs(self):

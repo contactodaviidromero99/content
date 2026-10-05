@@ -58,24 +58,52 @@ def parse_trends24(html_text: str) -> list:
     return cards
 
 
-def parse_getdaytrends(html_text: str) -> list:
+def _polyline_ranks(row) -> dict:
+    ranks = {}
+    for line in row.find_all("polyline"):
+        if "grid" in " ".join(line.get("class") or []):
+            continue
+        for x_value, y_value in re.findall(r"(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)", line.get("points") or ""):
+            slot = int(round(float(x_value) / 20))
+            y = float(y_value)
+            if 0 <= slot <= 7 and y < 50:
+                ranks[slot] = int(round(y)) + 1
+    return ranks
+
+
+def parse_getdaytrends(html_text: str, now: float = None) -> list:
     soup = BeautifulSoup(html_text or "", "html.parser")
-    seen, entries = set(), []
-    for link in soup.select('a[href*="/trend/"]'):
+    now = now or time.time()
+    rows = soup.select("table.trends tr") or soup.select("tr")
+    seen, current, history = set(), [], []
+    for row in rows:
+        link = row.find("a", href=re.compile(r"/trend/"))
+        if link is None:
+            continue
         name = link.get_text(" ", strip=True)
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
         count = None
-        row = link.find_parent("tr") or link.parent
-        if row is not None:
-            match = _COUNT_RE.search(row.get_text(" ", strip=True))
-            if match:
-                count = parse_compact_number(match.group(1))
-        entries.append((name, count))
-        if len(entries) >= 50:
+        match = _COUNT_RE.search(row.get_text(" ", strip=True))
+        if match:
+            count = parse_compact_number(match.group(1))
+        current.append((name, count))
+        history.append(_polyline_ranks(row))
+        if len(current) >= 50:
             break
-    return [(None, entries)] if entries else []
+    if not current:
+        return []
+    cards = [(now, current)]
+    for slot in range(6, -1, -1):
+        entries = sorted(
+            ((ranks[slot], name, count) for (name, count), ranks in zip(current, history) if slot in ranks),
+            key=lambda entry: entry[0],
+        )
+        cards.append((now - (7 - slot) * 3600, [(name, count, rank) for rank, name, count in entries]))
+    while len(cards) > 1 and not cards[-1][1]:
+        cards.pop()
+    return cards
 
 
 def build_items(cards: list, now: float = None) -> list:
@@ -86,9 +114,9 @@ def build_items(cards: list, now: float = None) -> list:
     history = cards[:24]
     positions = []
     for _, entries in history:
-        positions.append({key(name): index + 1 for index, (name, _) in enumerate(entries)})
+        positions.append({key(entry[0]): (entry[2] if len(entry) > 2 else index + 1) for index, entry in enumerate(entries)})
     items = []
-    for rank, (name, count) in enumerate(current, 1):
+    for rank, (name, count, *_rest) in enumerate(current, 1):
         ident = key(name)
         ranks = [p.get(ident) for p in positions]
         streak = 0
@@ -126,8 +154,8 @@ def fetch() -> SourceResult:
     session = make_session()
     errors = []
     for label, url, parser in (
-        ("trends24", TRENDS24_URL, parse_trends24),
         ("getdaytrends", GETDAYTRENDS_URL, parse_getdaytrends),
+        ("trends24", TRENDS24_URL, parse_trends24),
     ):
         try:
             response = check(session.get(url, timeout=TIMEOUT), label)

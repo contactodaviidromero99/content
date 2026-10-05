@@ -81,6 +81,12 @@ def _news_from_list(row):
     }
 
 
+def _news_tokens(raw) -> list:
+    tokens = [t for t in (raw or []) if isinstance(t, (list, str)) and t]
+    tokens.sort(key=lambda t: 0 if isinstance(t, list) and len(t) > 1 and t[1] == "es" else 1)
+    return tokens[:6]
+
+
 def parse_trending(payload) -> list:
     rows = payload[1] if isinstance(payload, list) and len(payload) > 1 and isinstance(payload[1], list) else []
     items = []
@@ -111,7 +117,7 @@ def parse_trending(payload) -> list:
             "related": [r for r in (at(9) or []) if isinstance(r, str)][:15],
             "topics": topics,
             "categories": categories,
-            "news_tokens": [t for t in (at(11) or []) if isinstance(t, str)][:6],
+            "news_tokens": _news_tokens(at(11)),
             "news": news[:5],
             "url": explore_url(keyword),
         })
