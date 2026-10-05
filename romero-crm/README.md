@@ -12,19 +12,20 @@ Es gratuito, funciona en tu ordenador y no necesita cuentas ni claves de API.
 
 | Sección | Para qué sirve |
 |---|---|
-| **Radar** | Los temas más calientes, fusionados entre plataformas: si algo es tendencia en Google, X y Wikipedia a la vez, aparece una sola vez con todas sus señales. Las tendencias sueltas de X (por ejemplo «29-N» o «PSOE» el día que se convocan elecciones) se enlazan con su historia principal y aparecen en ella como **ángulos**. Índice de calor de 0 a 100, volumen, crecimiento, evolución y fase. |
-| **Predicción** | Qué temas tienen recorrido: fase (explosivo, en ascenso, señal temprana, en pico, enfriándose) con el motivo concreto («ha pasado de 20 mil+ a 100 mil+ búsquedas en menos de 2 h»), potencial y ventana estimada según cuánto suelen durar las tendencias de ese nicho. Incluye qué nichos están al alza frente a su media semanal. |
-| **Nichos** | Reparto por temática (deportes, política, historia, TV, tecnología…) y mapa de la semana. |
-| **Historial** | Lo más buscado cada día, a qué hora arrancan las tendencias, cuánto duran y qué temas se repiten. |
+| **Radar** | **Lo importante ahora**, explicado: cada tema dice **qué pasa** (el titular que explica por qué es tendencia), **qué es** si no es evidente (por ejemplo, quién es una persona o qué es un partido) y sus cifras en una frase («100 mil+ búsquedas en Google · nº 2 en X desde hace 2 h · lo cuentan 5 medios»). Si algo es tendencia en Google, X y Wikipedia a la vez, aparece una sola vez con todas sus señales, y las tendencias sueltas de X se enlazan con su historia principal como **ángulos**. |
+| **Predicción** | Qué temas tienen recorrido, con su «qué pasa» y «qué es», el motivo concreto («ha pasado de 20 mil+ a 100 mil+ búsquedas en menos de 2 h») y el **margen para publicar** según cuánto suelen durar las tendencias de ese nicho. Abajo, los aniversarios que conviene preparar con antelación. |
+| **Nichos** | Qué está pasando hoy en cada temática (deportes, política, historia, TV…), con sus tres temas principales y si el nicho está más activo o más flojo que de costumbre. |
+| **Historial** | Lo más buscado cada día y lo que enseña tu historial: a qué hora suelen arrancar las tendencias, cuánto duran y qué temas vuelven. |
 | **Google** | Tendencias de búsqueda de las últimas 24 h, con volumen, subida y búsquedas relacionadas. |
-| **YouTube** | Para cada tema caliente, cuántos vídeos se han subido esta semana y cuántas visualizaciones tienen: **hueco claro**, competencia moderada o muy competido. |
-| **TikTok** | Acceso directo a TikTok Creative Center. TikTok ahora exige iniciar sesión para ver sus tendencias, así que el programa no puede leerlas por ti (ver *Fuentes y límites*). |
+| **YouTube** | Para cada tema caliente, cuántos vídeos **sobre ese tema** se han subido esta semana y cuántas visualizaciones tienen: **hueco claro**, competencia moderada o muy competido. Solo cuentan los vídeos que nombran el tema (para personas, nombre y apellido), y si hay riesgo de confusión busca con contexto («Ángel Arroyo ciclista»). |
 | **X** | Tendencias de X en España, con cuánto tiempo llevan y su posición hora a hora en las últimas 8 horas. |
 | **Wikipedia** | Los artículos más leídos desde España: una pista de lo que la gente quiere entender a fondo. |
-| **Noticias** | Titulares de los medios españoles por sección. |
+| **Noticias** | **Las historias del día**: lo que más medios cuentan y además es tendencia. Debajo, lo que cubren varios medios pero aún no está en el radar. Las secciones completas quedan plegadas. |
 | **Efemérides** | Qué pasó tal día como hoy y los aniversarios redondos de los próximos 30 días (25, 50, 100, 250 años…), con prioridad a los de España. |
 
-Al pulsar un tema se abre su ficha: por qué es tendencia, titulares que lo explican, curva de interés, competencia en YouTube, búsquedas relacionadas y un **brief listo para pegar en Claude** y pedirle ángulos para un guion.
+Al pulsar un tema se abre su ficha: qué pasa, qué es, sus cifras, las señales de cada plataforma, la curva de interés, más titulares, competencia en YouTube, búsquedas relacionadas y un **brief listo para pegar en Claude** y pedirle ángulos para un guion.
+
+En **Ajustes** puedes poner tu nombre para que el radar te salude.
 
 ![Ficha de un tema](docs/detalle.jpg)
 
@@ -81,11 +82,11 @@ Tus datos están en `~/Library/Application Support/Romero CRM/`. Desde **Ajustes
 | Google News | RSS público por secciones | Alta |
 | Efemérides | API oficial de Wikipedia «tal día como hoy» | Alta |
 | X (Twitter) | getdaytrends.com (principal) y trends24.in (respaldo); la API de X es de pago | Media: son webs de terceros |
-| TikTok | TikTok Creative Center, ahora dentro de TikTok One | **No disponible sin cuenta** |
 | YouTube | Búsqueda pública de vídeos de la última semana | Media |
 
-- **TikTok ya no enseña sus tendencias sin iniciar sesión.** Creative Center forma parte ahora de TikTok One y pide cuenta. Romero CRM no usa tu cuenta ni tu contraseña, así que la sección de TikTok te lleva a Creative Center para que lo mires tú. El programa vuelve a comprobarlo cada 6 horas por si TikTok lo reabre.
-- **Instagram y Facebook no publican tendencias**, ni gratis ni pagando. Para formato vertical, la mejor aproximación es cruzar el Radar con lo que veas en TikTok Creative Center con tu cuenta.
+- **Las explicaciones no se inventan.** «Qué pasa» es un titular real de un medio que nombra el tema; «qué es» es la descripción de Wikipedia, y solo se muestra si corresponde de verdad al tema (mismo nombre y misma temática). Si no hay ninguna fiable, el programa lo dice en lugar de adivinar.
+- **TikTok no está.** Sus tendencias (Creative Center) ahora solo se ven con cuenta de TikTok One, y Romero CRM no usa tu cuenta ni tu contraseña. En la ficha de cada tema tienes un enlace para buscarlo en TikTok.
+- **Instagram y Facebook no publican tendencias**, ni gratis ni pagando. Para formato vertical, la mejor aproximación es cruzar el Radar con lo que veas en TikTok con tu cuenta.
 - **Google ya no deja descargar la curva de cada tendencia.** Por eso Romero CRM apunta el volumen de cada tendencia en cada actualización y dibuja su propia curva. Las primeras horas verás pocas curvas; cuanto más tiempo tengas el programa abierto, más completas serán.
 - **YouTube eliminó su página de Tendencias en julio de 2025.** Por eso la sección de YouTube mide competencia en lugar de mostrar «lo más visto».
 - Si una fuente falla, el resto sigue funcionando y en **Ajustes → Estado de las fuentes** verás el motivo.
@@ -104,6 +105,7 @@ romero-crm/
 │   ├── server.py                 servidor local + API JSON
 │   ├── engine.py                 actualizaciones programadas
 │   ├── analysis.py               fusión multiplataforma, calor, fases, ventanas
+│   ├── explain.py                qué pasa, qué es y cifras en palabras
 │   ├── niches.py                 clasificación por nichos
 │   ├── storage.py                historial en SQLite
 │   ├── sources/                  una fuente por archivo

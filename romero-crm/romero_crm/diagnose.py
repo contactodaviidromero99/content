@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 from .config import Settings
 from .engine import Engine
 from .net import APP_UA, TIMEOUT, make_session
-from .sources import efemerides, google_trends, news, tiktok, wikipedia, x_trends, youtube
+from .sources import efemerides, google_trends, news, wikipedia, x_trends, youtube
 from .storage import Storage
 
 RESULTS = {}
@@ -160,97 +160,6 @@ def diag_x() -> None:
     show("fetch error", result.error)
 
 
-def diag_tiktok() -> None:
-    session = make_session()
-    for url in tiktok.HASHTAG_PAGES[:1] + tiktok.MUSIC_PAGES[:1]:
-        print(f"\n  -- {url} --")
-        try:
-            response = session.get(url, timeout=TIMEOUT, headers={"Accept": "text/html"})
-        except Exception as exc:
-            show("error", exc)
-            continue
-        show("status", response.status_code)
-        show("url final", response.url)
-        show("longitud", len(response.text))
-        soup = BeautifulSoup(response.text, "html.parser")
-        show("título", soup.title.get_text(strip=True) if soup.title else None)
-        for blob_id in ("__MODERN_SSR_DATA__", "__MODERN_ROUTER_DATA__"):
-            node = soup.find("script", id=blob_id)
-            if node is None:
-                show(blob_id, "no")
-                continue
-            raw = node.string or node.get_text() or ""
-            show(blob_id, f"{len(raw)} caracteres")
-            try:
-                blob = json.loads(raw)
-                for path, size, keys in list_paths(blob)[:15]:
-                    print(f"   · {path} (n={size}) claves={keys}")
-                snippet(json.dumps(blob, ensure_ascii=False)[:1500], 1500)
-            except ValueError:
-                snippet(raw[:800], 800)
-        manifest_src = next((src for src in re.findall(r'<script[^>]+src="([^"]+)"', response.text) if "route-manifest" in src), None)
-        if manifest_src:
-            manifest = session.get(("https:" + manifest_src) if manifest_src.startswith("//") else manifest_src, timeout=TIMEOUT).text
-            chunk_refs = sorted(set(re.findall(r'"([^"]*creativeCenter[^"]*)"', manifest)))
-            show("rutas creativeCenter en manifiesto", chunk_refs[:20])
-            js_files = sorted(set(re.findall(r'(static/js/async/[^"\']+\.js)', manifest)))
-            trend_files = [f for f in js_files if re.search(r"creative|trend|center", f, re.I)]
-            show("chunks asíncronos", f"{len(js_files)} totales, {len(trend_files)} relacionados")
-            base = manifest_src.split("static/js/")[0]
-            base = ("https:" + base) if base.startswith("//") else base
-            for chunk in trend_files[:6]:
-                try:
-                    code = session.get(base + chunk, timeout=TIMEOUT).text
-                except Exception as exc:
-                    show("chunk error", exc)
-                    continue
-                paths = sorted(set(re.findall(r'["\'`](/[a-z_]+(?:/[a-zA-Z0-9_]+){2,8})["\'`]', code)))
-                interesting = [x for x in paths if re.search(r"trend|hashtag|music|sound|popular|creative_radar|radar", x, re.I)]
-                show(f"chunk {chunk[-50:]}", f"{len(code)} bytes · {interesting[:25]}")
-        bundles = [src for src in re.findall(r'<script[^>]+src="([^"]+)"', response.text) if "/main." in src or "route" in src]
-        for src in bundles[:3]:
-            url = ("https:" + src) if src.startswith("//") else src
-            try:
-                js = session.get(url, timeout=TIMEOUT).text
-            except Exception as exc:
-                show("js error", exc)
-                continue
-            apis = sorted(set(re.findall(r'["\'`](/(?:creative_radar_api|api|tiktok_one|creative)[^"\'`\s]{3,120})["\'`]', js)))
-            trendish = [a for a in apis if re.search(r"trend|hashtag|music|sound|popular|creator", a, re.I)]
-            show(f"js {url[-48:]}", f"{len(js)} bytes, {len(apis)} rutas api, {len(trendish)} de tendencias")
-            for api in trendish[:40]:
-                print(f"     {api}")
-            hosts = sorted(set(re.findall(r"https://[a-z0-9.-]*tiktok[a-z0-9.-]*\.com", js)))
-            show("hosts", hosts[:15])
-        data = tiktok.extract_next_data(response.text)
-        show("__NEXT_DATA__", bool(data))
-        if data:
-            for path, size, keys in list_paths(data)[:20]:
-                print(f"   · {path} (n={size}) claves={keys}")
-        else:
-            scripts = [s.get("id") or s.get("src") for s in soup.find_all("script")][:15]
-            show("scripts", scripts)
-            show("menciones 'hashtag'", response.text.count("hashtag"))
-            snippet(response.text[:1200], 1200)
-    try:
-        response = session.get(tiktok.HASHTAG_API, params={"page": 1, "limit": 20, "period": 7, "country_code": "ES", "sort_by": "popular"},
-                               headers={"Accept": "application/json", "Referer": tiktok.BROWSE_URL}, timeout=TIMEOUT)
-        show("api status", response.status_code)
-        snippet(response.text, 500)
-    except Exception as exc:
-        show("api error", exc)
-    result = tiktok.fetch()
-    show("fetch ok", result.ok)
-    show("fetch error", result.error)
-    show("hashtags", len(result.items))
-    for item in result.items[:8]:
-        print(f"   - #{item['rank']} {item['title']!r} posts={item['posts']} vistas={item['views']} sector={item['industry']} cambio={item['rank_change']}")
-    songs = (result.meta or {}).get("songs") or []
-    show("canciones", len(songs))
-    for item in songs[:5]:
-        print(f"   - #{item['rank']} {item['title']!r} — {item['author']!r}")
-
-
 def diag_wikipedia() -> None:
     session = make_session(APP_UA)
     day = dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)
@@ -367,6 +276,22 @@ def diag_pipeline() -> None:
         print(f"       razón: {topic['phase_reason']}")
         if topic.get("story") or topic.get("angles"):
             print(f"       historia: {(topic.get('story') or {}).get('title')} · ángulos: {[a['title'] for a in topic.get('angles', [])]}")
+    section("EXPLICACIONES (lo que verá el usuario en el radar)")
+    top = [t for t in topics if not t["utility"]][:20]
+    show("con «qué pasa»", f"{sum(1 for t in top if t.get('why'))}/{len(top)}")
+    show("con «qué es»", f"{sum(1 for t in top if t.get('what'))}/{len(top)}")
+    for topic in top:
+        why, chip = topic.get("why") or {}, topic.get("youtube") or {}
+        print(f"   {topic['rank']:>2}. {topic['title']!r} [{topic['niche']}]")
+        print(f"       qué pasa: {why.get('title')!r} ({why.get('source')})")
+        subject = f"{topic['what_subject']}: " if topic.get("what_subject") else ""
+        print(f"       qué es:   {subject}{topic.get('what')!r}")
+        print(f"       cifras:   {topic.get('summary')!r}")
+        if chip:
+            print(f"       youtube:  {chip.get('label')} · {chip.get('count')} vídeos · máx {chip.get('top_views')}")
+    for item in ((state.get("platforms") or {}).get("youtube") or [])[:6]:
+        print(f"   · youtube «{item.get('query')}» busca {item.get('search_url', '').split('search_query=')[-1].split('&')[0]!r}: "
+              f"{[(v['title'][:60], v['views']) for v in (item.get('videos') or [])[:3]]}")
     linked = [t for t in topics if t.get("story")]
     show("temas enlazados a una historia", len(linked))
     for topic in linked[:25]:
@@ -382,7 +307,6 @@ def diag_pipeline() -> None:
 CHECKS = {
     "google": ("GOOGLE TRENDS", diag_google),
     "x": ("X (TRENDS24 / GETDAYTRENDS)", diag_x),
-    "tiktok": ("TIKTOK CREATIVE CENTER", diag_tiktok),
     "wikipedia": ("WIKIPEDIA Y EFEMÉRIDES", diag_wikipedia),
     "news": ("GOOGLE NEWS", diag_news),
     "youtube": ("YOUTUBE", diag_youtube),

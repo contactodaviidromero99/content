@@ -219,6 +219,18 @@ def parse_ago_seconds(text):
     return None
 
 
+def fmt_number(value) -> str:
+    if value is None:
+        return "—"
+    value = float(value)
+    for limit, suffix in ((1e6, " M"), (1e3, " mil")):
+        if abs(value) >= limit:
+            number = value / limit
+            text = f"{number:.1f}".rstrip("0").rstrip(".") if number < 10 else f"{number:.0f}"
+            return text.replace(".", ",") + suffix
+    return f"{value:.0f}"
+
+
 def clean_html_text(text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text or "")
     return " ".join(text.split())

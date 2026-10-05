@@ -9,13 +9,14 @@ from pathlib import Path
 
 from . import APP_NAME
 
-SOURCE_IDS = ("google", "youtube", "tiktok", "x", "wikipedia", "news")
+SOURCE_IDS = ("google", "youtube", "x", "wikipedia", "news")
 
 DEFAULT_SETTINGS = {
     "refresh_minutes": 30,
     "hide_utility": True,
     "theme": "system",
     "youtube_topics": 8,
+    "name": "",
     "sources": {sid: True for sid in SOURCE_IDS},
 }
 
@@ -76,6 +77,8 @@ class Settings:
             self._data["youtube_topics"] = _clamp_int(patch["youtube_topics"], 0, 20, 8)
         if "hide_utility" in patch:
             self._data["hide_utility"] = bool(patch["hide_utility"])
+        if isinstance(patch.get("name"), str):
+            self._data["name"] = " ".join("".join(c for c in patch["name"] if c.isprintable()).split())[:40]
         if patch.get("theme") in ("system", "light", "dark"):
             self._data["theme"] = patch["theme"]
         sources = patch.get("sources")

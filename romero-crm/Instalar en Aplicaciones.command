@@ -29,6 +29,9 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/applet.icns" 2>/dev/null
 touch "$APP"
+# Que el Finder y el Launchpad muestren el icono nuevo al actualizar
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+[ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$APP" >/dev/null 2>&1
 
 echo ""
 echo "  Listo: tienes «Romero CRM» en tu carpeta Aplicaciones (dentro de tu usuario)."

@@ -243,7 +243,8 @@ DESCRIPTION_KEYWORDS = {
                         "television series", "pelicula", "film", "reality", "programa de television",
                         "television program", "youtuber", "influencer", "modelo", "personaje", "character",
                         "telenovela", "miniserie", "anime", "manga", "comic"],
-    "musica": ["cantante", "singer", "rapero", "rapper", "musico", "musician", "banda", "band",
+    "musica": ["cantante", "singer", "rapero", "rapper", "musico", "musician", "banda", "band", "instrumento musical",
+               "instrumento de percusion", "genero musical",
                "grupo musical", "album", "cancion", "song", "compositor", "composer", "dj", "festival de musica"],
     "historia": ["batalla", "battle", "guerra", "war", "imperio", "empire", "dinastia", "dynasty", "reino",
                  "kingdom", "monarca", "emperador", "emperor", "faraon", "pharaoh", "conquistador", "explorador",
@@ -337,21 +338,3 @@ def classify(title: str, related=(), headlines=(), base=None, description: str =
         if niche != "otros" and value >= 2 and len(result) < 3:
             result.append(niche)
     return result
-
-
-def niche_from_tiktok_industry(label) -> str:
-    text = norm(label if isinstance(label, str) else "")
-    table = [
-        ("educ", "educacion"), ("deport", "deportes"), ("sport", "deportes"), ("jueg", "videojuegos"),
-        ("game", "videojuegos"), ("comida", "gastronomia"), ("food", "gastronomia"), ("bebida", "gastronomia"),
-        ("belleza", "estilo"), ("beauty", "estilo"), ("ropa", "estilo"), ("apparel", "estilo"),
-        ("tecnolog", "tecnologia"), ("tech", "tecnologia"), ("app", "tecnologia"), ("viaj", "viajes"),
-        ("travel", "viajes"), ("vehic", "motor"), ("mascota", "animales"), ("pet", "animales"),
-        ("financ", "economia"), ("business", "economia"), ("negocio", "economia"), ("salud", "salud"),
-        ("health", "salud"), ("noticia", "actualidad"), ("news", "entretenimiento"),
-        ("entreten", "entretenimiento"), ("entertain", "entretenimiento"),
-    ]
-    for needle, niche in table:
-        if needle in text:
-            return niche
-    return "ocio" if text else "otros"

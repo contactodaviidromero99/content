@@ -9,31 +9,29 @@ const DESKTOP = new URLSearchParams(location.search).get('shell') === 'desktop';
 const SOURCES = {
   google: { label: 'Google', long: 'Google Trends', icon: 'google' },
   youtube: { label: 'YouTube', long: 'YouTube', icon: 'play' },
-  tiktok: { label: 'TikTok', long: 'TikTok', icon: 'music' },
   x: { label: 'X', long: 'X (Twitter)', icon: 'hash' },
   wikipedia: { label: 'Wikipedia', short: 'Wiki', long: 'Wikipedia', icon: 'book' },
   news: { label: 'Noticias', long: 'Noticias', icon: 'news' },
 };
-const SOURCE_ORDER = ['google', 'youtube', 'tiktok', 'x', 'wikipedia', 'news'];
+const SOURCE_ORDER = ['google', 'youtube', 'x', 'wikipedia', 'news'];
 const PHASE_ICON = { explosivo: 'zap', subiendo: 'trending', temprana: 'signal', pico: 'minus', enfriandose: 'trendingDown' };
 const LEVEL_TEXT = { hueco: 'Hueco claro', moderado: 'Competencia moderada', saturado: 'Muy competido' };
 
 const ROUTES = [
   { group: 'Panorama' },
-  { id: 'radar', label: 'Radar', icon: 'radar', title: 'Radar de tendencias', subtitle: 'Lo que está moviendo España ahora mismo, en todas las plataformas.', filters: true },
-  { id: 'prediccion', label: 'Predicción', icon: 'sparkles', title: 'Predicción', subtitle: 'Temas con recorrido: hacia dónde va cada tendencia y cuánto margen queda.', filters: true },
-  { id: 'nichos', label: 'Nichos', icon: 'grid', title: 'Nichos', subtitle: 'Qué temáticas dominan hoy y cómo han evolucionado esta semana.' },
-  { id: 'historial', label: 'Historial', icon: 'clock', title: 'Historial', subtitle: 'Qué funcionó cada día, a qué hora arrancan las tendencias y cuánto duran.' },
+  { id: 'radar', label: 'Radar', icon: 'radar', title: 'Radar', subtitle: 'Lo que está pasando en España ahora mismo, y por qué.', filters: true },
+  { id: 'prediccion', label: 'Predicción', icon: 'sparkles', title: 'Predicción', subtitle: 'Los temas con más recorrido: qué pasa, cuánto margen queda y si hay hueco para tu vídeo.', filters: true },
+  { id: 'nichos', label: 'Nichos', icon: 'grid', title: 'Nichos', subtitle: 'Qué está pasando hoy en cada temática.' },
+  { id: 'historial', label: 'Historial', icon: 'clock', title: 'Historial', subtitle: 'Qué funcionó cada día y qué nos enseña para publicar mejor.' },
   { group: 'Plataformas' },
   { id: 'google', label: 'Google', icon: 'google', source: 'google', title: 'Búsquedas en Google', subtitle: 'Tendencias de búsqueda en España de las últimas 24 horas (Google Trends).' },
   { id: 'youtube', label: 'YouTube', icon: 'play', source: 'youtube', title: 'YouTube: huecos de contenido', subtitle: 'Cuánta competencia hay en YouTube para cada tema caliente.' },
-  { id: 'tiktok', label: 'TikTok', icon: 'music', source: 'tiktok', title: 'TikTok España', subtitle: 'Hashtags y canciones en tendencia (TikTok Creative Center, últimos 7 días).' },
   { id: 'x', label: 'X', icon: 'hash', source: 'x', title: 'Tendencias en X', subtitle: 'Lo que se comenta ahora en X (Twitter) en España.' },
   { id: 'wikipedia', label: 'Wikipedia', icon: 'book', source: 'wikipedia', title: 'Curiosidad: Wikipedia', subtitle: 'Los artículos más leídos desde España: una pista de qué quiere entender la gente.' },
-  { id: 'noticias', label: 'Noticias', icon: 'news', source: 'news', title: 'Noticias', subtitle: 'Titulares de los medios españoles por sección (Google News).' },
+  { id: 'noticias', label: 'Noticias', icon: 'news', source: 'news', title: 'Noticias', subtitle: 'Las historias que más medios están contando hoy.' },
   { group: 'Planificar' },
   { id: 'efemerides', label: 'Efemérides', icon: 'calendar', title: 'Efemérides y aniversarios', subtitle: 'Lo que pasó tal día como hoy y los aniversarios redondos de las próximas semanas.' },
-  { id: 'ajustes', label: 'Ajustes', icon: 'settings', title: 'Ajustes', subtitle: 'Fuentes, frecuencia de actualización, apariencia y datos.' },
+  { id: 'ajustes', label: 'Ajustes', icon: 'settings', title: 'Ajustes', subtitle: 'Tu nombre, frecuencia de actualización, apariencia y fuentes.' },
 ];
 
 const ui = {
@@ -43,7 +41,6 @@ const ui = {
   historyAt: 0,
   route: 'radar',
   niche: 'all',
-  source: 'all',
   sort: 'heat',
   search: '',
   showAll: false,
@@ -205,8 +202,6 @@ function seriesDescriber(topic) {
       }
       case 'x':
         return { value: value > 0 ? `Nº ${Math.round(51 - value)}` : 'Fuera del top', label: 'en X', title: back === 0 ? 'Ahora' : `Hace ${back} h` };
-      case 'tiktok':
-        return { value: `${Math.round(value * 100)} / 100`, label: 'popularidad', title: back === 0 ? 'Último día' : `Hace ${back} días` };
       case 'wikipedia':
         return { value: `${F.num(value)} lecturas`, label: 'desde España', title: back === 0 ? 'Último día' : `${back} días antes` };
       default:
@@ -228,7 +223,6 @@ function visibleTopics() {
   let list = ui.state?.topics || [];
   if (ui.settings?.hide_utility !== false) list = list.filter((t) => !t.utility);
   if (ui.niche !== 'all') list = list.filter((t) => (t.niches || [t.niche]).includes(ui.niche));
-  if (ui.source !== 'all') list = list.filter((t) => t.sources.includes(ui.source));
   if (ui.search) {
     const q = norm(ui.search);
     list = list.filter((t) => norm(`${t.title} ${(t.related || []).join(' ')} ${t.description || ''}`).includes(q));
@@ -263,16 +257,6 @@ function sourceError(id, extraButtons = '') {
   return `<div class="card">${emptyState('alert', `No hay datos de ${SOURCES[id]?.long || id} ahora mismo`,
     'El resto del programa sigue funcionando. Se volverá a intentar en la próxima actualización.',
     `${st.error ? `<div class="err-text">${esc(st.error)}</div>` : ''}<div class="actions"><button class="btn btn-sm" data-action="refresh">${icon('refresh')}Reintentar</button>${extraButtons}</div>`)}</div>`;
-}
-
-function tiktokLoginCard(button) {
-  return `<div class="card"><div class="card-body login-card">${icon('info')}<div>
-    <h3>TikTok ya no publica sus tendencias sin cuenta</h3>
-    <p>Creative Center forma parte ahora de <b>TikTok One</b> y solo enseña los hashtags, canciones y creadores en tendencia con la sesión iniciada. Romero CRM no usa tu cuenta ni tu contraseña, así que no puede leerlos por ti.</p>
-    <ol><li>Ábrelo con el botón e inicia sesión con tu cuenta de TikTok.</li>
-      <li>Filtra por <b>España</b> y <b>últimos 7 días</b>.</li>
-      <li>Cruza lo que veas con el Radar: un tema que ya es tendencia en Google o X y además despega en TikTok es la señal más fuerte para un vídeo vertical. En la ficha de cada tema tienes un botón para buscarlo en TikTok.</li></ol>
-    <div class="actions">${button}</div></div></div></div>`;
 }
 
 function staleNote(id) {
@@ -317,7 +301,6 @@ function renderNav() {
     radar: visibleTopics().length,
     google: ui.state?.platforms?.google?.filter((g) => g.active).length,
     x: ui.state?.platforms?.x?.length,
-    tiktok: ui.state?.platforms?.tiktok?.hashtags?.length,
     wikipedia: ui.state?.platforms?.wikipedia?.length,
     youtube: ui.state?.platforms?.youtube?.length,
   };
@@ -377,14 +360,7 @@ function renderFilters() {
   const niches = (ui.state.niches || []).filter((n) => counts[n.id]).sort((a, b) => counts[b.id] - counts[a.id]);
   const nicheChips = [`<button class="fchip ${ui.niche === 'all' ? 'on' : ''}" data-niche="all">Todos <span class="n">${base.length}</span></button>`]
     .concat(niches.map((n) => `<button class="fchip ${ui.niche === n.id ? 'on' : ''}" data-niche="${esc(n.id)}">${esc(n.name)} <span class="n">${counts[n.id]}</span></button>`));
-  const sourceOptions = ['all', ...SOURCE_ORDER.filter((s) => s !== 'youtube')].map((s) =>
-    `<option value="${s}" ${ui.source === s ? 'selected' : ''}>${s === 'all' ? 'Todas las fuentes' : `Solo en ${esc(SOURCES[s].long)}`}</option>`).join('');
-  el.innerHTML = `
-    <div class="chip-scroll" id="chip-scroll">${nicheChips.join('')}</div>
-    <div class="filter-tools">
-      <select class="select" id="source-filter" aria-label="Filtrar por fuente">${sourceOptions}</select>
-      <label class="toggle" title="Oculta loterías, el tiempo, horarios y búsquedas parecidas"><input type="checkbox" id="hide-utility" ${ui.settings?.hide_utility !== false ? 'checked' : ''}>Ocultar utilitarias</label>
-    </div>`;
+  el.innerHTML = `<div class="chip-scroll" id="chip-scroll">${nicheChips.join('')}</div>`;
   const scroller = $('#chip-scroll');
   scroller.addEventListener('wheel', (event) => {
     if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
@@ -440,7 +416,7 @@ function renderView() {
 
 function offlineScreen() {
   const st = ui.state?.sources || {};
-  const rows = ['google', 'x', 'tiktok', 'wikipedia', 'news'].map((id) => {
+  const rows = ['google', 'x', 'wikipedia', 'news'].map((id) => {
     const s = st[id] || {};
     const state = s.enabled === false ? 'Desactivada' : s.ok ? 'Correcto' : 'Sin respuesta';
     return `<div>${icon(SOURCES[id].icon)}${esc(SOURCES[id].long)}<span class="st ${s.ok ? 'ok' : 'error'}" title="${esc(s.error || '')}">${esc(state)}</span></div>`;
@@ -455,16 +431,111 @@ function offlineScreen() {
 
 function loadingScreen() {
   const progress = ui.state?.progress || {};
-  const labels = { google: 'Google Trends', google_week: 'Google · historial 7 días', x: 'X (Twitter)', tiktok: 'TikTok', wikipedia: 'Wikipedia', news: 'Noticias', efemerides: 'Efemérides', youtube: 'YouTube' };
+  const labels = { google: 'Google Trends', google_week: 'Google · historial 7 días', x: 'X (Twitter)', wikipedia: 'Wikipedia', news: 'Noticias', efemerides: 'Efemérides', youtube: 'YouTube' };
   const rows = Object.keys(labels).map((id) => {
     const st = progress[id];
     const text = { ok: 'Listo', error: 'Sin respuesta', running: 'Buscando…', pending: 'En cola' }[st] || 'En cola';
     return `<div>${icon(SOURCES[id]?.icon || 'calendar')}${esc(labels[id])}<span class="st ${esc(st || '')}">${esc(text)}</span></div>`;
   }).join('');
   return `<div class="loading-screen"><div class="radar-anim"></div><h2>Buscando tendencias en España…</h2>
-    <p>La primera vez tarda unos segundos: consulto Google, X, TikTok, Wikipedia y los medios.</p>
+    <p>La primera vez tarda unos segundos: consulto Google, X, Wikipedia y los medios.</p>
     <div class="progress-list">${rows}</div>
     ${ui.state?.last_error ? `<div class="err-text">Error interno: ${esc(ui.state.last_error)}</div>` : ''}</div>`;
+}
+
+/* ---------- Explicaciones ---------- */
+
+function greeting() {
+  const hour = new Date().getHours();
+  const hello = hour < 6 ? 'Buenas noches' : hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
+  const name = (ui.settings?.name || '').trim();
+  return `${hello}${name ? `, ${name}` : ''}`;
+}
+
+function whatHtml(t) {
+  if (!t.what) return '';
+  if (t.what_subject) return `<p class="explain"><span class="ex-label">Contexto</span><span class="ex-text">${esc(t.what_subject)}: ${esc(t.what.charAt(0).toLowerCase() + t.what.slice(1))}</span></p>`;
+  return `<p class="explain"><span class="ex-label">Qué es</span><span class="ex-text">${esc(t.what)}</span></p>`;
+}
+
+function whyHtml(t) {
+  if (t.why) {
+    const meta = [t.why.source, t.why.published ? F.ago(t.why.published) : ''].filter(Boolean).join(' · ');
+    return `<p class="explain why"><span class="ex-label">Qué pasa</span><span class="ex-text">${esc(t.why.title)}${meta ? ` <span class="ex-src">${esc(meta)}</span>` : ''}</span></p>`;
+  }
+  if (t.story) return `<p class="explain why"><span class="ex-label">Qué pasa</span><span class="ex-text">Forma parte de la historia «${esc(t.story.title)}».</span></p>`;
+  return `<p class="explain why muted-why"><span class="ex-label">Qué pasa</span><span class="ex-text">Todavía no hay titulares que lo expliquen: es una conversación de redes o de búsquedas. ${esc(t.phase_reason || '')}</span></p>`;
+}
+
+function shortWhy(t) {
+  if (t.why) return t.why.title;
+  if (t.what) return t.what_subject ? `Sobre ${t.what_subject}: ${t.what}` : t.what;
+  if (t.story) return `Parte de «${t.story.title}»`;
+  return t.phase_reason || '';
+}
+
+function youtubeChip(t) {
+  const yt = t.youtube;
+  if (!yt || !yt.level) return '';
+  const text = { hueco: 'Hueco en YouTube', moderado: 'YouTube: competencia media', saturado: 'YouTube muy competido' }[yt.level] || yt.label;
+  return `<span class="level level-${esc(yt.level)}"><i></i>${esc(text)}</span>`;
+}
+
+function storyCard(t, i) {
+  return `<article class="story" data-topic="${esc(t.key)}" tabindex="0">
+    <div class="story-top">
+      <span class="story-rank">${i + 1}</span>
+      <div class="story-head"><h3>${esc(t.title)}</h3><div class="story-meta">${phaseChip(t)}${nicheChip(t.niche)}${youtubeChip(t)}</div></div>
+      <div class="story-heat" title="Calor: alcance, impulso, presencia en varias plataformas y frescura"><b>${t.heat}</b><span>calor</span></div>
+    </div>
+    ${whyHtml(t)}
+    ${whatHtml(t)}
+    <div class="story-foot"><span class="story-summary">${esc(t.summary || '')}</span><span class="story-spark" data-spark="${esc(t.key)}"></span></div>
+  </article>`;
+}
+
+function topicList(list, limit, offset = 0) {
+  if (!list.length) return emptyState('search', 'Nada con estos filtros', 'Prueba con otro nicho o borra la búsqueda.');
+  const rows = list.slice(0, limit).map((t, i) => `
+    <tr tabindex="0" data-topic="${esc(t.key)}">
+      <td class="rank">${i + 1 + offset}</td>
+      <td><div class="t-title">${esc(t.title)}</div><div class="t-why">${esc(shortWhy(t))}</div></td>
+      <td class="hide-sm">${nicheChip(t.niche)}</td>
+      <td>${meter(t.heat)}</td>
+      <td class="num"><div class="num-main">${metricMain(t)}</div><div class="num-sub">${esc(t.metric?.kind || '')}</div></td>
+      <td>${phaseChip(t)}</td>
+    </tr>`).join('');
+  const cols = '<colgroup><col style="width:44px"><col><col class="hide-sm" style="width:150px"><col style="width:96px"><col style="width:108px"><col style="width:128px"></colgroup>';
+  return `<table class="ttable fixed">${cols}<thead><tr><th>#</th><th>Tema y por qué</th><th class="hide-sm">Nicho</th><th>Calor</th><th class="num">Volumen</th><th>Fase</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function historyInsights(history) {
+  const out = [];
+  const hours = history.start_hours || [];
+  if (hours.some((v) => v > 0)) {
+    let best = 0;
+    for (let h = 0; h < 24; h += 1) if ((hours[h] || 0) + (hours[(h + 1) % 24] || 0) > (hours[best] || 0) + (hours[(best + 1) % 24] || 0)) best = h;
+    out.push(`Las tendencias arrancan sobre todo entre las <b>${best}:00 y las ${(best + 2) % 24}:00</b>. Publicar justo antes te pone en la ola desde el principio.`);
+  }
+  const all = history.lifecycle_all;
+  const life = (history.lifecycle || []).filter((l) => l.count >= 3);
+  if (all) {
+    let text = `Una tendencia dura de media <b>${esc(F.hours(all.median))}</b> en Google`;
+    if (life.length >= 2) {
+      const sorted = [...life].sort((a, b) => a.median - b.median);
+      text += `: las de ${esc(sorted[0].name)} se apagan antes (~${esc(F.hours(sorted[0].median))}) y las de ${esc(sorted[sorted.length - 1].name)} aguantan más (~${esc(F.hours(sorted[sorted.length - 1].median))})`;
+    }
+    out.push(`${text}.`);
+  }
+  const hm = history.heatmap;
+  if (hm?.niches?.length) {
+    const totals = hm.niches.map((n, i) => ({ name: n.name, id: n.id, total: (hm.values[i] || []).reduce((a, b) => a + b, 0) }))
+      .filter((n) => n.id !== 'otros').sort((a, b) => b.total - a.total).slice(0, 3);
+    if (totals.length) out.push(`Los nichos con más tendencias esta semana: ${totals.map((n) => `<b>${esc(n.name)}</b> (${n.total})`).join(', ')}.`);
+  }
+  const recurring = (history.recurring || []).slice(0, 3);
+  if (recurring.length) out.push(`Vuelven una y otra vez: ${recurring.map((r) => `<b>${esc(r.title)}</b>`).join(', ')}. Son temas con interés de fondo, buenos para piezas atemporales.`);
+  return out;
 }
 
 /* ---------- Views ---------- */
@@ -522,53 +593,26 @@ function efemItem(item, clickable = true) {
 
 const VIEWS = {
   radar() {
-    const k = ui.state.kpis || {};
     const list = sortTopics(visibleTopics(), ui.sort);
-    const rising = sortTopics(visibleTopics().filter((t) => ['explosivo', 'subiendo', 'temprana'].includes(t.phase)), 'potential').slice(0, 5);
-    const limit = ui.showAll ? list.length : 30;
-    const kpis = `<div class="kpis">
-      ${kpiTile({ label: 'Temas en tendencia', iconName: 'radar', value: F.full(k.topics), sub: `<b>${F.full(k.rising)}</b> en ascenso ahora` })}
-      ${kpiTile({ label: 'Lo más buscado', iconName: 'google', value: esc(k.top_volume?.title || '—'), text: true, sub: k.top_volume ? `<b>${F.num(k.top_volume.value)}+</b> búsquedas` : 'Sin datos de Google', topic: k.top_volume?.key })}
-      ${kpiTile({ label: 'Mayor subida', iconName: 'zap', value: esc(k.top_growth?.title || '—'), text: true, sub: k.top_growth ? `<b class="up">${F.pct(k.top_growth.value)}</b> en Google` : 'Sin datos', topic: k.top_growth?.key })}
-      ${kpiTile({ label: 'Multiplataforma', iconName: 'layers', value: F.full(k.multiplatform), sub: 'temas en 2 o más plataformas' })}
-      ${kpiTile({ label: 'Nicho dominante', iconName: 'grid', value: esc(k.dominant_niche?.name || '—'), text: true, sub: k.dominant_niche ? `<b>${k.dominant_niche.count}</b> temas en el top 60` : '' })}
-    </div>`;
-    const sortSeg = ['heat', 'potential', 'volume', 'recent'].map((s) =>
-      `<button class="${ui.sort === s ? 'on' : ''}" data-sort="${s}">${{ heat: 'Calor', potential: 'Potencial', volume: 'Volumen', recent: 'Recientes' }[s]}</button>`).join('');
-    const risingHtml = rising.length ? rising.map((t) => `
-      <div class="li" data-topic="${esc(t.key)}" tabindex="0">
-        <div class="li-main"><div class="li-title">${esc(t.title)}</div>
-          <div class="li-sub">${esc(nicheName(t.niche))} · ${t.remaining_hours !== null && t.remaining_hours !== undefined ? `~${esc(F.hours(t.remaining_hours))} de recorrido` : esc(t.phase_label)}</div></div>
-        <div class="li-side">${phaseChip(t)}<div class="small muted mt-8">Potencial <b style="color:var(--text)">${t.potential}</b></div></div>
-      </div>`).join('') : emptyState('sparkles', 'Nada despegando ahora', 'Cuando un tema empiece a crecer aparecerá aquí.');
-    const efem = upcomingHighlights(3);
-    const html = `${kpis}
-      <div class="grid cols-12">
-        <div class="card span-8">
-          <div class="card-head"><div><h2>Top ahora</h2><p>${list.length} temas · pulsa uno para ver por qué es tendencia</p></div>
-            <div class="card-tools"><div class="seg">${sortSeg}</div></div></div>
-          <div class="card-body flush">${topicTable(list, limit)}
-            ${list.length > limit ? `<div style="padding:10px 18px"><button class="btn btn-sm" data-action="show-all">Ver los ${list.length} temas</button></div>` : ''}</div>
-        </div>
-        <div class="stack span-4">
-          <div class="card"><div class="card-head"><div><h2>Lo que viene</h2><p>Mayor potencial de seguir creciendo</p></div><a class="link small" href="#/prediccion">Ver todo</a></div>
-            <div class="card-body flush"><div class="list">${risingHtml}</div></div></div>
-          <div class="card"><div class="card-head"><div><h2>Nichos ahora</h2><p>Temas por nicho · pulsa para filtrar</p></div></div>
-            <div class="card-body"><div id="radar-niches"></div></div></div>
-          <div class="card"><div class="card-head"><div><h2>Próximos aniversarios</h2><p>Para preparar contenido con antelación</p></div><a class="link small" href="#/efemerides">Ver todo</a></div>
-            <div class="card-body flush"><div class="list">${efem.length ? efem.map((e) => efemItem(e)).join('') : emptyState('calendar', 'Sin aniversarios redondos cerca', 'Revisa la sección Efemérides.')}</div></div></div>
-        </div>
-      </div>`;
-    return {
-      html,
-      mount(root) {
-        mountSparks(root);
-        const stats = (ui.state.niche_stats || []).filter((n) => n.id !== 'otros').slice(0, 8);
-        C.barList($('#radar-niches', root), stats.map((n) => ({ id: n.id, label: n.name, value: n.count, display: String(n.count), tipLabel: `temas · calor medio ${n.heat_avg}`, tip: n.name })), {
-          onClick: (row) => { ui.niche = row.id; render(); },
-        });
-      },
-    };
+    const top = list.slice(0, 5);
+    const rest = list.slice(5);
+    const limit = ui.showAll ? rest.length : 20;
+    const k = ui.state.kpis || {};
+    const pulse = [
+      `${F.full(list.length)} temas en el radar`,
+      k.rising ? `${F.full(k.rising)} subiendo ahora` : '',
+      k.top_volume ? `lo más buscado: ${k.top_volume.title} (${F.num(k.top_volume.value)}+)` : '',
+    ].filter(Boolean).join(' · ');
+    const sortSeg = ['heat', 'potential', 'recent'].map((s) =>
+      `<button class="${ui.sort === s ? 'on' : ''}" data-sort="${s}">${{ heat: 'Más calientes', potential: 'Más potencial', recent: 'Más recientes' }[s]}</button>`).join('');
+    const html = `
+      <div class="hello"><h2>${esc(greeting())}. Esto es lo que está pasando.</h2><p>${esc(pulse)}${ui.state.generated_at ? ` · actualizado ${esc(F.ago(ui.state.generated_at))}` : ''}</p></div>
+      <div class="section-head"><h2>Lo importante ahora</h2><div class="seg">${sortSeg}</div></div>
+      ${top.length ? `<div class="story-grid">${top.map((t, i) => storyCard(t, i)).join('')}</div>` : `<div class="card">${emptyState('search', 'Nada con estos filtros', 'Prueba con otro nicho o borra la búsqueda.')}</div>`}
+      ${rest.length ? `<div class="card mt-16"><div class="card-head"><div><h2>Más temas</h2><p>${rest.length} temas más · pulsa uno para ver la explicación completa</p></div></div>
+        <div class="card-body flush">${topicList(rest, limit, 5)}
+          ${rest.length > limit ? `<div style="padding:10px 18px"><button class="btn btn-sm" data-action="show-all">Ver los ${rest.length} temas</button></div>` : ''}</div></div>` : ''}`;
+    return { html, mount: mountSparks };
   },
 
   prediccion() {
@@ -581,89 +625,53 @@ const VIEWS = {
       const windowHtml = used !== null ? `<div class="window">
           <div class="window-head"><span>Lleva ${esc(F.hours(elapsed))}</span><span>Suele durar ~${esc(F.hours(typical))}</span></div>
           <div class="window-track"><i style="width:${used.toFixed(1)}%"></i></div>
-          <div class="small muted">${t.remaining_hours > 0 ? `Ventana estimada: <b style="color:var(--text)">~${esc(F.hours(t.remaining_hours))}</b>` : 'Ventana casi agotada: piensa en un ángulo de fondo, no de última hora.'}</div></div>`
-        : '<div class="small muted">Sin hora de inicio conocida: no se puede estimar la ventana.</div>';
-      const signals = (t.signals || []).map((s) => `<li><i style="background:var(--src-${esc(s.source)})"></i><span>${esc(s.text)}</span></li>`).join('');
-      return `<div class="card pred" data-topic="${esc(t.key)}" tabindex="0">
-        <div class="pred-top"><div><div class="pred-title">${esc(t.title)}</div><div class="row-gap mt-8">${phaseChip(t)}${nicheChip(t.niche)}${storyChip(t)}</div></div>
-          <div class="pred-score"><b>${t.potential}</b><span>potencial</span></div></div>
-        <div class="reason">${esc(t.phase_reason || '')}</div>
+          <div class="small muted">${t.remaining_hours > 0 ? `Margen para publicar: <b style="color:var(--text)">~${esc(F.hours(t.remaining_hours))}</b>` : 'Margen casi agotado: busca un ángulo de fondo, no de última hora.'}</div></div>`
+        : '';
+      return `<article class="card pred" data-topic="${esc(t.key)}" tabindex="0">
+        <div class="pred-top"><div><div class="pred-title">${esc(t.title)}</div><div class="row-gap mt-8">${phaseChip(t)}${nicheChip(t.niche)}${youtubeChip(t)}</div></div>
+          <div class="pred-score" title="Potencial: el calor ajustado por la fase y el margen que le queda"><b>${t.potential}</b><span>potencial</span></div></div>
+        ${whyHtml(t)}
+        ${whatHtml(t)}
+        <p class="signal">${icon(PHASE_ICON[t.phase] || 'trending')}<span>${esc(t.phase_reason || '')}</span></p>
         ${windowHtml}
-        <ul class="signals">${signals}</ul>
-        <div data-spark="${esc(t.key)}" data-spark-wide="1"></div>
-      </div>`;
-    }).join('') : `<div class="card">${emptyState('sparkles', 'Ningún tema en fase de subida con estos filtros', 'Quita filtros o vuelve en un rato.')}</div>`;
+      </article>`;
+    }).join('') : `<div class="card">${emptyState('sparkles', 'Ningún tema despegando con estos filtros', 'Quita filtros o vuelve en un rato.')}</div>`;
     const highlights = upcomingHighlights(8);
     const html = `
-      <div class="card"><div class="card-body"><div class="how">
-        <div><b>${icon('flame')} Calor (0–100)</b><span>Alcance (volumen o posición), impulso (crecimiento), presencia en varias plataformas y frescura.</span></div>
-        <div><b>${icon('sparkles')} Potencial (0–100)</b><span>El calor ajustado por la fase y por el margen que le queda. Es lo que te interesa para publicar.</span></div>
-        <div><b>${icon('trending')} Fase</b><span>Explosivo, en ascenso, señal temprana, en pico o enfriándose, según cómo cambian el volumen de búsquedas, la posición en X y las lecturas en las últimas horas.</span></div>
-        <div><b>${icon('clock')} Ventana</b><span>Cuánto suelen durar las tendencias de ese nicho (calculado con tu propio historial) menos lo que ya lleva.</span></div>
-      </div><p class="note mt-8">Son <b>estimaciones transparentes</b>, no adivinación: se basan en datos públicos y en patrones de la última semana. Úsalas para priorizar, no como garantía.</p></div></div>
+      <details class="howto"><summary>${icon('info')}¿Cómo se calcula?</summary>
+        <div class="how">
+          <div><b>${icon('flame')} Calor (0–100)</b><span>Alcance (volumen o posición), impulso (crecimiento), presencia en varias plataformas y frescura.</span></div>
+          <div><b>${icon('sparkles')} Potencial (0–100)</b><span>El calor ajustado por la fase y por el margen que le queda. Es lo que te interesa para publicar.</span></div>
+          <div><b>${icon('trending')} Fase</b><span>Explosivo, en ascenso, señal temprana, en pico o enfriándose, según cómo cambian las búsquedas, la posición en X y las lecturas.</span></div>
+          <div><b>${icon('clock')} Margen</b><span>Cuánto suelen durar las tendencias de ese nicho (con tu propio historial) menos lo que ya lleva.</span></div>
+        </div><p class="note mt-8">Son estimaciones con datos públicos, no adivinación: sirven para priorizar, no son una garantía.</p></details>
       <div class="pred-grid">${cards}</div>
-      <div class="grid cols-12">
-        <div class="card span-6"><div class="card-head"><div><h2>Nichos al alza</h2><p>Peso de cada nicho en las últimas 24 h frente a su media de la semana (puntos porcentuales)</p></div><button class="table-toggle" id="mom-toggle">Ver tabla</button></div>
-          <div class="card-body"><div id="momentum"></div><div id="momentum-table" hidden></div></div></div>
-        <div class="card span-6"><div class="card-head"><div><h2>Cuánto dura una tendencia</h2><p>Duración mediana por nicho en Google (últimos 7 días)</p></div></div>
-          <div class="card-body"><div id="lifecycle"></div></div></div>
-      </div>
-      <div class="card"><div class="card-head"><div><h2>Aniversarios redondos que se acercan</h2><p>Contenido que puedes preparar con días de ventaja</p></div><a class="link small" href="#/efemerides">Calendario completo</a></div>
+      <div class="card"><div class="card-head"><div><h2>Para preparar con antelación</h2><p>Aniversarios redondos de las próximas semanas: los medios hablarán de ellos</p></div><a class="link small" href="#/efemerides">Calendario completo</a></div>
         <div class="card-body flush"><div class="list">${highlights.length ? highlights.map((e) => efemItem(e)).join('') : emptyState('calendar', 'Sin aniversarios redondos en 30 días', '')}</div></div></div>`;
-    return {
-      html,
-      mount(root) {
-        mountSparks(root);
-        const momentum = ui.state.predictions?.niche_momentum || [];
-        const rows = momentum.map((m) => ({ label: m.name, value: m.delta, display: `${m.delta > 0 ? '+' : m.delta < 0 ? '−' : ''}${Math.abs(m.delta).toFixed(1).replace('.', ',')} pp`, tipLabel: `hoy ${m.today_share}% · media ${m.avg_share}%` }));
-        C.divergingBars($('#momentum', root), rows, { emptyText: 'Hace falta al menos un par de días de historial para comparar.' });
-        $('#momentum-table', root).innerHTML = `<table class="dtable"><thead><tr><th>Nicho</th><th class="num">Hoy</th><th class="num">Media</th><th class="num">Diferencia</th></tr></thead><tbody>${momentum.map((m) => `<tr><td>${esc(m.name)}</td><td class="num">${m.today_share} %</td><td class="num">${m.avg_share} %</td><td class="num">${m.delta}</td></tr>`).join('')}</tbody></table>`;
-        C.tableToggle($('#mom-toggle', root), $('#momentum', root), $('#momentum-table', root));
-        const lifecycle = Object.entries(ui.state.predictions?.lifecycle || {}).filter(([id, v]) => id !== '_all' && v.count >= 3)
-          .sort((a, b) => b[1].median - a[1].median).slice(0, 10);
-        C.barList($('#lifecycle', root), lifecycle.map(([id, v]) => ({ label: nicheName(id), value: v.median, display: F.hours(v.median), tipLabel: `mediana de ${v.count} tendencias`, tip: nicheName(id) })));
-      },
-    };
+    return { html };
   },
 
   nichos() {
-    const stats = (ui.state.niche_stats || []);
-    const metricSeg = ['count', 'heat'].map((m) => `<button class="${ui.nicheMetric === m ? 'on' : ''}" data-niche-metric="${m}">${m === 'count' ? 'Temas' : 'Calor'}</button>`).join('');
-    const cards = stats.map((n) => `
-      <div class="card niche-card" data-go-niche="${esc(n.id)}" tabindex="0">
-        <h3>${esc(n.name)}</h3>
-        <div class="niche-stats"><div><b>${n.count}</b><span>temas</span></div><div><b>${n.heat_avg}</b><span>calor medio</span></div>${n.volume ? `<div><b>${F.num(n.volume)}</b><span>búsquedas</span></div>` : ''}</div>
-        <ul class="niche-top">${n.top.map((t) => `<li>· ${esc(t.title)}</li>`).join('')}</ul>
-      </div>`).join('');
-    const html = `
-      <div class="grid cols-12">
-        <div class="card span-5"><div class="card-head"><div><h2>Reparto actual</h2><p>Pulsa un nicho para ver sus temas en el Radar</p></div><div class="seg">${metricSeg}</div></div>
-          <div class="card-body"><div id="niche-bars"></div></div></div>
-        <div class="card span-7"><div class="card-head"><div><h2>Semana por nichos</h2><p>Tendencias de Google que arrancaron cada día, por nicho</p></div><button class="table-toggle" id="hm-toggle">Ver tabla</button></div>
-          <div class="card-body"><div id="niche-heatmap"><div class="spinner"></div></div><div id="niche-heatmap-table" hidden></div></div></div>
-      </div>
-      <div class="niche-grid">${cards || emptyState('grid', 'Sin datos todavía', '')}</div>`;
-    return {
-      html,
-      async mount(root) {
-        const sorted = [...stats].sort((a, b) => (ui.nicheMetric === 'count' ? b.count - a.count : b.heat_total - a.heat_total));
-        const rows = sorted.map((n) => ({ id: n.id, label: n.name, value: ui.nicheMetric === 'count' ? n.count : n.heat_total, display: ui.nicheMetric === 'count' ? String(n.count) : F.num(n.heat_total), tip: n.name, tipLabel: ui.nicheMetric === 'count' ? 'temas en tendencia' : 'suma del calor de sus temas' }));
-        C.barList($('#niche-bars', root), rows, { onClick: (row) => { ui.niche = row.id; location.hash = '#/radar'; } });
-        try {
-          const history = await loadHistory();
-          const hm = history.heatmap;
-          const cols = [...hm.days].reverse();
-          const values = hm.values.map((row) => [...row].reverse());
-          const target = $('#niche-heatmap', root);
-          if (!target) return;
-          C.heatmap(target, { rows: hm.niches, cols: cols.map((d) => F.dayShort(d)), values });
-          $('#niche-heatmap-table', root).innerHTML = `<table class="dtable"><thead><tr><th>Nicho</th>${cols.map((d) => `<th class="num">${esc(F.day(d))}</th>`).join('')}</tr></thead><tbody>${hm.niches.map((n, i) => `<tr><td>${esc(n.name)}</td>${values[i].map((v) => `<td class="num">${v}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-          C.tableToggle($('#hm-toggle', root), target, $('#niche-heatmap-table', root));
-        } catch (err) {
-          $('#niche-heatmap', root).innerHTML = '<div class="empty small">No se pudo cargar el historial.</div>';
-        }
-      },
-    };
+    const stats = (ui.state.niche_stats || []).filter((n) => n.count);
+    const momentum = Object.fromEntries((ui.state.predictions?.niche_momentum || []).map((m) => [m.id, m]));
+    const named = stats.filter((n) => n.id !== 'otros');
+    const hot = named.slice(0, 2).map((n) => `${n.name} (${n.count} temas)`);
+    const rising = named.filter((n) => (momentum[n.id]?.delta || 0) >= 3).map((n) => n.name);
+    const intro = named.length ? `Hoy dominan ${hot.join(' y ')}.${rising.length ? ` Más activo que de costumbre: ${rising.join(', ')}.` : ''}` : '';
+    const cards = stats.map((n) => {
+      const m = momentum[n.id];
+      const badge = m && m.delta >= 3 ? '<span class="trend-badge up">↑ Más activo que de costumbre</span>'
+        : m && m.delta <= -3 ? '<span class="trend-badge down">↓ Más flojo que de costumbre</span>' : '';
+      const topics = (n.top || []).map((x) => topicByKey(x.key)).filter(Boolean).map((t) => `
+        <li data-topic="${esc(t.key)}" tabindex="0"><b>${esc(t.title)}</b><span>${esc(shortWhy(t))}</span></li>`).join('');
+      return `<div class="card niche-card">
+        <div class="niche-head"><h3>${esc(n.name)}</h3><span class="niche-count">${n.count} ${n.count === 1 ? 'tema' : 'temas'}</span></div>
+        ${badge}
+        <ul class="niche-topics">${topics}</ul>
+        <button class="link small" data-go-niche="${esc(n.id)}">Ver ${n.count === 1 ? 'el tema' : `los ${n.count}`} en el radar →</button>
+      </div>`;
+    }).join('');
+    return { html: `${intro ? `<p class="intro">${esc(intro)}</p>` : ''}<div class="niche-grid">${cards || emptyState('grid', 'Sin datos todavía', '')}</div>` };
   },
 
   historial() {
@@ -684,46 +692,31 @@ const VIEWS = {
         if (!ui.historyDay || !days.find((d) => d.day === ui.historyDay)) {
           ui.historyDay = (days.find((d) => d.google_count >= 5) || days.find((d) => d.google_count > 0) || days[0])?.day;
         }
-        const current = days.find((d) => d.day === ui.historyDay) || { top_searches: [], top_topics: [], top_wikipedia: [] };
+        const current = days.find((d) => d.day === ui.historyDay) || { top_searches: [] };
         const dayChips = days.map((d) => `<button class="fchip ${d.day === ui.historyDay ? 'on' : ''}" data-history-day="${esc(d.day)}">${esc(F.day(d.day))} <span class="n">${d.google_count}</span></button>`).join('');
-        const searches = current.top_searches.filter((s) => ui.settings?.hide_utility === false || !s.utility);
-        const searchRows = searches.length ? searches.map((s, i) => `
-          <tr><td class="rank">${i + 1}</td><td><div class="t-title">${esc(s.title)}</div><div class="t-meta">${nicheChip(s.niche)}<span>empezó a las ${esc(F.clock(s.started))}</span></div></td>
-          <td class="num"><div class="num-main">${F.num(s.volume)}+</div><div class="num-sub">búsquedas</div></td>
-          <td class="num"><div class="num-main">${s.duration_hours !== null ? esc(F.hours(s.duration_hours)) : (s.active ? 'Activa' : '—')}</div><div class="num-sub">duración</div></td></tr>`).join('')
-          : `<tr><td colspan="4">${emptyState('clock', 'Sin búsquedas registradas ese día', 'El historial se completa a medida que usas el programa.')}</td></tr>`;
-        const multi = current.top_topics.length ? current.top_topics.slice(0, 8).map((t) => `
-          <div class="li"><div class="li-main li-stack"><div class="li-title">${esc(t.title)}</div><div class="t-meta" style="margin:0">${nicheChip(t.niche)}${sourceBadges(t.sources)}</div></div>
-          <div class="li-side"><div class="big-num" style="font-size:18px">${Math.round(t.peak_heat || 0)}</div><div class="small muted">calor máx.</div></div></div>`).join('')
-          : emptyState('layers', 'Aún no hay radar guardado de ese día', 'Romero CRM guarda una foto del radar cada vez que se actualiza.');
-        const recurring = (history.recurring || []).slice(0, 10).map((r) => `
+        const searches = current.top_searches.filter((s) => ui.settings?.hide_utility === false || !s.utility).slice(0, 10);
+        const rows = searches.length ? searches.map((s, i) => {
+          const lasted = s.duration_hours !== null ? `duró ${F.hours(s.duration_hours)}` : (s.active ? 'sigue activa' : '');
+          return `<div class="li"><div class="rank">${i + 1}</div><div class="li-main"><div class="li-title">${esc(s.title)}</div>
+            <div class="li-sub">${esc(nicheName(s.niche))} · empezó a las ${esc(F.clock(s.started))}${lasted ? ` · ${esc(lasted)}` : ''}</div></div>
+            <div class="li-side"><b>${F.num(s.volume)}+</b><div class="small muted">búsquedas</div></div></div>`;
+        }).join('') : emptyState('clock', 'Sin búsquedas registradas ese día', 'El historial se completa a medida que usas el programa.');
+        const recurring = (history.recurring || []).slice(0, 8).map((r) => `
           <div class="li"><div class="li-main"><div class="li-title">${esc(r.title)}</div><div class="li-sub">${esc(nicheName(r.niche))}</div></div>
           <div class="li-side"><b>${r.days}</b> <span class="small muted">días</span></div></div>`).join('');
         container.innerHTML = `
           <div class="chip-row" style="margin-bottom:16px">${dayChips}</div>
           <div class="grid cols-12">
             <div class="card span-7"><div class="card-head"><div><h2>Lo más buscado · ${esc(F.longDate(ui.historyDay))}</h2><p>Tendencias de Google que arrancaron ese día</p></div></div>
-              <div class="card-body flush"><table class="ttable"><thead><tr><th>#</th><th>Tema</th><th class="num">Volumen</th><th class="num">Duración</th></tr></thead><tbody>${searchRows}</tbody></table></div></div>
+              <div class="card-body flush"><div class="list">${rows}</div></div></div>
             <div class="stack span-5">
-              <div class="card"><div class="card-head"><div><h2>Tendencias por día</h2><p>Nuevas tendencias de Google cada día</p></div></div><div class="card-body"><div id="per-day"></div></div></div>
-              <div class="card"><div class="card-head"><div><h2>¿A qué hora arrancan?</h2><p>Hora de inicio de las tendencias de la semana</p></div></div><div class="card-body"><div id="per-hour"></div><p class="note small mt-8" id="hour-note"></p></div></div>
+              <div class="card"><div class="card-head"><div><h2>Lo que nos enseña</h2><p>Conclusiones de la última semana</p></div></div>
+                <div class="card-body"><ul class="insights">${historyInsights(history).map((x) => `<li>${x}</li>`).join('') || '<li>Hace falta algo más de historial para sacar conclusiones.</li>'}</ul></div></div>
+              <div class="card"><div class="card-head"><div><h2>Temas que vuelven</h2><p>Se buscan varios días: interés de fondo</p></div></div>
+                <div class="card-body flush"><div class="list">${recurring || emptyState('refresh', 'Todavía no hay temas repetidos', '')}</div></div></div>
             </div>
-          </div>
-          <div class="grid cols-12" style="margin-top:16px">
-            <div class="card span-4"><div class="card-head"><div><h2>Radar de ese día</h2><p>Temas con más calor (multiplataforma)</p></div></div><div class="card-body flush"><div class="list">${multi}</div></div></div>
-            <div class="card span-4"><div class="card-head"><div><h2>Cuánto duran</h2><p>Duración mediana por nicho</p></div></div><div class="card-body"><div id="hist-life"></div></div></div>
-            <div class="card span-4"><div class="card-head"><div><h2>Temas recurrentes</h2><p>Vuelven varios días: interés de fondo</p></div></div><div class="card-body flush"><div class="list">${recurring || emptyState('refresh', 'Todavía no hay temas repetidos', '')}</div></div></div>
           </div>`;
         hydrateIcons(container);
-        const perDay = [...days].reverse().map((d) => ({ label: F.dayShort(d.day), value: d.google_count, display: `${d.google_count} tendencias`, tip: F.longDate(d.day) }));
-        C.columns($('#per-day', container), perDay, { height: 150, highlight: (row, i) => [...days].reverse()[i].day === ui.historyDay, dim: true, onClick: (row, i) => { ui.historyDay = [...days].reverse()[i].day; renderView(); } });
-        const hoursData = (history.start_hours || []).map((v, h) => ({ label: `${h}h`, value: v, display: `${v} tendencias`, tip: `De ${h}:00 a ${h}:59` }));
-        C.columns($('#per-hour', container), hoursData, { height: 150, labelEvery: 3 });
-        const peak = (history.start_hours || []).reduce((best, v, h, arr) => (v > arr[best] ? h : best), 0);
-        if ((history.start_hours || []).some((v) => v > 0)) {
-          $('#hour-note', container).textContent = `La franja con más arranques es de ${peak}:00 a ${peak}:59. Publicar justo antes de esa hora te pone en la ola desde el principio.`;
-        }
-        C.barList($('#hist-life', container), (history.lifecycle || []).slice(0, 8).map((l) => ({ label: l.name, value: l.median, display: F.hours(l.median), tipLabel: `mediana de ${l.count} tendencias`, tip: l.name })));
       },
     };
   },
@@ -790,46 +783,6 @@ const VIEWS = {
     return { html: `${intro}${staleNote('youtube')}<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(420px,1fr))">${cards}</div>` };
   },
 
-  tiktok() {
-    const data = ui.state.platforms?.tiktok || {};
-    const browse = extLink(data.browse_url, `${icon('external')}Abrir Creative Center`, 'btn btn-sm');
-    if (!data.hashtags?.length && !data.songs?.length) {
-      return { html: sourceStatus('tiktok').requires_login ? tiktokLoginCard(extLink(data.browse_url, `${icon('external')}Abrir TikTok Creative Center`, 'btn btn-primary btn-sm')) : sourceError('tiktok', browse) };
-    }
-    let tags = data.hashtags || [];
-    if (ui.search) tags = tags.filter((t) => norm(t.title).includes(norm(ui.search)));
-    const rows = tags.map((t) => {
-      const topic = topicForSource('tiktok', t.id);
-      const change = t.is_new ? '<span class="chip">Nuevo</span>' : t.rank_change > 0 ? `<span class="up">▲ ${t.rank_change}</span>` : t.rank_change < 0 ? `<span class="down">▼ ${Math.abs(t.rank_change)}</span>` : '<span class="muted">=</span>';
-      return `<tr tabindex="0" ${topic ? `data-topic="${esc(topic.key)}"` : `data-ext-url="${esc(t.url)}"`}>
-        <td class="rank">${t.rank}</td>
-        <td><div class="t-title">${esc(t.title)}</div><div class="t-meta">${nicheChip(t.niche || t.niche_hint || 'otros')}${topic && topic.sources.length > 1 ? sourceBadges(topic.sources) : ''}</div></td>
-        <td class="num"><div class="num-main">${F.num(t.posts)}</div><div class="num-sub">publicaciones</div></td>
-        <td class="num"><div class="num-main">${F.num(t.views)}</div><div class="num-sub">visualizaciones</div></td>
-        <td class="hide-sm"><div data-tspark="${esc(t.id)}"></div></td>
-        <td>${change}</td></tr>`;
-    }).join('');
-    const songs = (data.songs || []).map((s) => `
-      <div class="li" data-ext-url="${esc(s.url)}">
-        ${s.cover ? `<span class="thumb thumb-box"><img src="${esc(F.safeUrl(s.cover))}" alt="" loading="lazy"></span>` : `<div class="thumb thumb-fallback">${icon('music')}</div>`}
-        <div class="li-main"><div class="li-title">${esc(s.title)}</div><div class="li-sub">${esc(s.author || '')}</div></div>
-        <div class="li-side"><b>#${s.rank}</b>${s.is_new ? '<div class="small muted">nueva</div>' : s.rank_change > 0 ? `<div class="small up">▲ ${s.rank_change}</div>` : ''}</div></div>`).join('');
-    const html = `${staleNote('tiktok')}<div class="grid cols-12">
-      <div class="card span-8"><div class="card-head"><div><h2>Hashtags en tendencia</h2><p>España · últimos 7 días · ranking de TikTok Creative Center</p></div>${browse}</div>
-        <div class="card-body flush">${tags.length ? `<table class="ttable"><thead><tr><th>#</th><th>Hashtag</th><th class="num">Publicaciones</th><th class="num">Vistas</th><th class="hide-sm">7 días</th><th>Cambio</th></tr></thead><tbody>${rows}</tbody></table>` : emptyState('hash', 'Sin hashtags con este filtro', '')}</div></div>
-      <div class="card span-4"><div class="card-head"><div><h2>Canciones en tendencia</h2><p>Para la música de tus vídeos</p></div></div>
-        <div class="card-body flush"><div class="list">${songs || emptyState('music', 'Sin canciones ahora mismo', '')}</div></div></div></div>`;
-    return {
-      html,
-      mount(root) {
-        $$('[data-tspark]', root).forEach((el) => {
-          const t = tags.find((i) => i.id === el.dataset.tspark);
-          if (t) el.replaceChildren(C.sparkline(t.series || [], { describe: seriesDescriber({ series: t.series, series_kind: 'tiktok' }) }));
-        });
-      },
-    };
-  },
-
   x() {
     let items = ui.state.platforms?.x || [];
     if (!items.length) return { html: sourceError('x') };
@@ -894,17 +847,38 @@ const VIEWS = {
   noticias() {
     const data = ui.state.platforms?.news || {};
     if (!data.items?.length) return { html: sourceError('news') };
+    const reach = (t) => Math.max(t.news?.outlets || 0, ...(t.news?.items || []).map((n) => n.coverage || 0));
+    const topics = visibleTopics().filter((t) => reach(t) >= 2 && t.why);
+    topics.sort((a, b) => (reach(b) - reach(a)) || (b.heat - a.heat));
+    const stories = topics.slice(0, 8).map((t) => `
+      <div class="li" data-topic="${esc(t.key)}" tabindex="0">
+        <div class="li-main"><div class="li-title wrap">${esc(t.title)}</div><div class="li-sub wrap">${esc(t.why.title)}</div></div>
+        <div class="li-side"><span class="chip">${reach(t)} medios</span></div></div>`).join('');
+    const inRadar = new Set((ui.state.topics || []).flatMap((t) => (t.news?.items || []).map((n) => n.title)));
+    const covered = data.items.filter((n) => !inRadar.has(n.title) && (n.coverage || 1) >= 2)
+      .sort((a, b) => (b.coverage || 1) - (a.coverage || 1) || (b.published || 0) - (a.published || 0));
+    const filtered = ui.search ? covered.filter((n) => norm(n.title).includes(norm(ui.search))) : covered;
+    const top = filtered.slice(0, 10).map((n) => `
+      <div class="li" data-ext-url="${esc(n.url)}">
+        <div class="li-main"><div class="li-title wrap">${esc(n.title)}</div><div class="li-sub">${esc(n.source || '')} · ${esc(F.ago(n.published))}</div></div>
+        <div class="li-side">${n.coverage > 1 ? `<span class="chip">${n.coverage} medios</span>` : ''}</div></div>`).join('');
     const labels = data.labels || {};
     const byId = Object.fromEntries(data.items.map((i) => [i.id, i]));
     const tabs = Object.keys(labels).filter((s) => (data.sections?.[s] || []).length)
       .map((s) => `<button class="tab ${ui.newsSection === s ? 'on' : ''}" data-news="${esc(s)}">${esc(labels[s])}</button>`).join('');
-    let list = (data.sections?.[ui.newsSection] || []).map((id) => byId[id]).filter(Boolean);
-    if (ui.search) list = list.filter((n) => norm(n.title).includes(norm(ui.search)));
-    const rows = list.map((n) => `
+    const section = (data.sections?.[ui.newsSection] || []).map((id) => byId[id]).filter(Boolean)
+      .sort((a, b) => (b.coverage || 1) - (a.coverage || 1)).slice(0, 10).map((n) => `
       <div class="li" data-ext-url="${esc(n.url)}">
         <div class="li-main"><div class="li-title wrap">${esc(n.title)}</div><div class="li-sub">${esc(n.source || '')} · ${esc(F.ago(n.published))}</div></div>
         <div class="li-side">${n.coverage > 1 ? `<span class="chip">${n.coverage} medios</span>` : ''}</div></div>`).join('');
-    return { html: `${staleNote('news')}<div class="tabs">${tabs}</div><div class="card"><div class="card-body flush"><div class="list">${rows || emptyState('news', 'Sin titulares', '')}</div></div></div>` };
+    const html = `${staleNote('news')}
+      <div class="card"><div class="card-head"><div><h2>Las historias del día</h2><p>Lo que más medios están contando y además es tendencia · pulsa para ver por qué</p></div></div>
+        <div class="card-body flush"><div class="list">${stories || emptyState('news', 'Ninguna historia con varios medios todavía', '')}</div></div></div>
+      <div class="card mt-16"><div class="card-head"><div><h2>Aún fuera del radar</h2><p>Varios medios lo cuentan, pero todavía no es tendencia en búsquedas ni en X. Vigílalo.</p></div></div>
+        <div class="card-body flush"><div class="list">${top || emptyState('news', 'Nada destacable fuera del radar', 'Todo lo que cubren varios medios ya está en el radar.')}</div></div></div>
+      <details class="howto mt-16"><summary>${icon('news')}Por secciones</summary><div class="tabs mt-8">${tabs}</div>
+        <div class="card"><div class="card-body flush"><div class="list">${section || emptyState('news', 'Sin titulares', '')}</div></div></div></details>`;
+    return { html };
   },
 
   efemerides() {
@@ -933,7 +907,7 @@ const VIEWS = {
   ajustes() {
     const s = ui.settings || {};
     const statuses = ui.state?.sources || {};
-    const rows = ['google', 'google_week', 'youtube', 'tiktok', 'x', 'wikipedia', 'news', 'efemerides'].map((id) => {
+    const rows = ['google', 'google_week', 'youtube', 'x', 'wikipedia', 'news', 'efemerides'].map((id) => {
       const st = statuses[id] || {};
       const cls = st.enabled === false || st.requires_login ? 'off' : st.stale ? 'stale' : st.ok ? 'ok' : st.fetched_at ? 'err' : 'off';
       const text = st.enabled === false ? 'Desactivada' : st.requires_login ? 'Requiere cuenta' : st.stale ? 'Datos antiguos' : st.ok ? 'Funcionando' : st.fetched_at ? 'Con errores' : 'Pendiente';
@@ -944,7 +918,9 @@ const VIEWS = {
       <div class="grid cols-12">
         <div class="card span-7"><div class="card-head"><div><h2>Preferencias</h2></div></div>
           <div class="card-body flush"><div class="settings">
-            <div class="setting"><div><b>Actualizar cada</b><p>Mientras el programa esté abierto. TikTok y Wikipedia van más despacio porque publican datos diarios.</p></div>
+            <div class="setting"><div><b>Tu nombre</b><p>Para saludarte en el Radar.</p></div>
+              <input class="input" id="set-name" maxlength="40" placeholder="Por ejemplo, David" value="${esc(s.name || '')}"></div>
+            <div class="setting"><div><b>Actualizar cada</b><p>Mientras el programa esté abierto. Wikipedia va más despacio porque publica datos diarios.</p></div>
               <select class="select" id="set-refresh">${[10, 15, 30, 60, 120].map((m) => `<option value="${m}" ${s.refresh_minutes === m ? 'selected' : ''}>${m} minutos</option>`).join('')}</select></div>
             <div class="setting"><div><b>Temas analizados en YouTube</b><p>Cuántos de los temas más calientes se comprueban en YouTube en cada actualización.</p></div>
               <select class="select" id="set-youtube">${[0, 4, 8, 12, 16].map((m) => `<option value="${m}" ${s.youtube_topics === m ? 'selected' : ''}>${m === 0 ? 'Ninguno' : `${m} temas`}</option>`).join('')}</select></div>
@@ -959,7 +935,7 @@ const VIEWS = {
             <div class="card-body"><div class="small muted">Carpeta</div><div class="err-text" style="margin:4px 0 12px">${esc(s.data_dir || '')}</div>
               <button class="btn btn-sm" data-action="clear-history">${icon('database')}Borrar historial</button></div></div>
           <div class="card"><div class="card-head"><div><h2>Acerca de</h2></div></div>
-            <div class="card-body note">Romero CRM ${esc(ui.state?.app?.version || '')}. Usa solo fuentes públicas y gratuitas: Google Trends, getdaytrends y trends24 (X), Wikimedia, Google News y búsquedas de YouTube. TikTok Creative Center ahora exige cuenta: el programa lo comprueba cada 6 horas por si vuelve a abrirse. Algunas son webs de terceros que cambian a menudo: si una falla, el resto sigue funcionando y aquí verás el motivo.</div></div>
+            <div class="card-body note">Romero CRM ${esc(ui.state?.app?.version || '')}. Usa solo fuentes públicas y gratuitas: Google Trends, getdaytrends y trends24 (X), Wikimedia, Google News y búsquedas de YouTube. TikTok no aparece porque ya no publica sus tendencias sin cuenta; en la ficha de cada tema tienes un botón para buscarlo en TikTok. Algunas son webs de terceros que cambian a menudo: si una falla, el resto sigue funcionando y aquí verás el motivo.</div></div>
         </div>
       </div>
       <div class="card"><div class="card-head"><div><h2>Estado de las fuentes</h2><p>Última consulta de cada una. Si algo falla, copia el informe y pégaselo a Claude.</p></div>
@@ -994,6 +970,8 @@ function topicForSource(source, id) {
 
 function buildBrief(topic, detail) {
   const lines = [`TEMA: ${topic.title}`, `NICHO: ${nicheName(topic.niche)}`, `FASE: ${topic.phase_label} (calor ${topic.heat}/100, potencial ${topic.potential}/100)`];
+  if (topic.what) lines.push(`${topic.what_subject ? `SOBRE ${topic.what_subject.toUpperCase()}` : 'QUÉ ES'}: ${topic.what}`);
+  if (topic.why) lines.push(`QUÉ PASA: ${topic.why.title}${topic.why.source ? ` (${topic.why.source})` : ''}`);
   if (topic.remaining_hours) lines.push(`VENTANA ESTIMADA: ~${F.hours(topic.remaining_hours)}`);
   const signals = (topic.signals || []).map((s) => `- ${s.text}`);
   if (signals.length) lines.push('', 'DATOS:', ...signals);
@@ -1003,7 +981,9 @@ function buildBrief(topic, detail) {
   if (topic.story) lines.push('', `FORMA PARTE DE LA HISTORIA: ${topic.story.title}`);
   if (topic.angles?.length) lines.push('', `TAMBIÉN SON TENDENCIA, LIGADOS A ESTA HISTORIA: ${topic.angles.map((a) => a.title).join(', ')}`);
   const yt = detail?.youtube;
-  if (yt) lines.push('', `COMPETENCIA EN YOUTUBE (última semana): ${yt.count >= 20 ? '20+' : yt.count} vídeos; el más visto, ${F.num(yt.top_views)} visualizaciones (${LEVEL_TEXT[yt.level] || yt.label}).`);
+  if (yt) lines.push('', yt.count
+    ? `COMPETENCIA EN YOUTUBE (última semana): ${yt.count >= 20 ? '20+' : yt.count} vídeos; el más visto, ${F.num(yt.top_views)} visualizaciones (${LEVEL_TEXT[yt.level] || yt.label}).`
+    : 'COMPETENCIA EN YOUTUBE (última semana): ningún vídeo sobre el tema (hueco claro).');
   lines.push('', 'Quiero un short narrativo (60-90 s) sobre este tema con mi estilo de guion. Propón 3 ángulos que NO sean los obvios, cada uno con un hook de una frase y una idea de cierre memorable. Distingue hechos verificados de interpretaciones.');
   return lines.join('\n');
 }
@@ -1017,14 +997,15 @@ function drawerHtml(topic, detail, loading) {
       <div class="d-stat"><span>Ventana</span><b>${topic.remaining_hours !== null && topic.remaining_hours !== undefined ? `~${esc(F.hours(topic.remaining_hours))}` : '—'}</b></div>
     </div>`;
   const signals = (topic.signals || []).map((s) => `<li><i style="background:var(--src-${esc(s.source)})"></i><span>${esc(s.text)}</span></li>`).join('');
-  const news = (detail?.news || topic.news?.items || []);
+  const leadTitle = topic.why?.title || '';
+  const news = (detail?.news || topic.news?.items || []).filter((n) => !leadTitle || !n.title || !n.title.includes(leadTitle.slice(0, 40)));
   const newsHtml = news.length ? news.slice(0, 8).map((n) => `
     <div class="news-item">${extLink(n.url, esc(n.title))}<span>${esc(n.source || '')}${n.published ? ` · ${esc(F.ago(n.published))}` : ''}</span></div>`).join('')
-    : loading ? '<div class="spinner"></div>' : '<div class="small muted">No he encontrado titulares que lo expliquen.</div>';
+    : loading ? '<div class="spinner"></div>' : '';
   const yt = detail?.youtube;
   const ytHtml = yt ? `
     <div class="row-gap" style="justify-content:space-between;margin-bottom:10px"><span class="level level-${esc(yt.level)}"><i></i>${esc(LEVEL_TEXT[yt.level] || yt.label)}</span>
-      <span class="small muted">${yt.count >= 20 ? '20+' : yt.count} vídeos esta semana · máx. ${F.num(yt.top_views)} · mediana ${F.num(yt.median_views)}</span></div>
+      <span class="small muted">${yt.count ? `${yt.count >= 20 ? '20+' : yt.count} vídeos esta semana · máx. ${F.num(yt.top_views)} · mediana ${F.num(yt.median_views)}` : 'Nadie ha subido vídeos sobre esto esta semana'}</span></div>
     ${(yt.videos || []).slice(0, 5).map((v) => `
       <div class="video"><span class="thumb wide thumb-box"><img src="${esc(F.safeUrl(v.thumbnail))}" alt="" loading="lazy"></span>
         <div style="min-width:0">${extLink(v.url, esc(v.title), 'v-title')}<div class="v-meta">${esc(v.channel || '')}${v.channel ? ' · ' : ''}${F.num(v.views)} visualizaciones${published(v)}</div></div></div>`).join('')}`
@@ -1044,13 +1025,18 @@ function drawerHtml(topic, detail, loading) {
       <div class="d-sub">${phaseChip(topic)}${nicheChip(topic.niche)}${sourceBadges(topic.sources)}</div>
     </div>
     <div class="d-body">
+      <div class="d-hero">
+        ${whyHtml(topic)}
+        ${whatHtml(topic)}
+        ${topic.summary ? `<p class="explain"><span class="ex-label">En cifras</span><span class="ex-text">${esc(topic.summary)}</span></p>` : ''}
+        ${topic.why?.url ? `<div class="actions mt-8">${extLink(topic.why.url, `${icon('external')}Leer la noticia`, 'btn btn-sm')}</div>` : ''}
+      </div>
       ${stats}
-      <div class="d-section"><h3>Por qué está aquí</h3><p class="reason" style="margin:0 0 10px">${esc(topic.phase_reason || '')}</p><ul class="signals">${signals}</ul>
-        ${topic.description ? `<p class="small muted" style="margin:10px 0 0">Wikipedia: ${esc(topic.description)}</p>` : ''}
+      <div class="d-section"><h3>Las señales</h3><p class="reason" style="margin:0 0 10px">${esc(topic.phase_reason || '')}</p><ul class="signals">${signals}</ul>
         ${topic.story ? `<p class="small" style="margin:10px 0 0">Forma parte de la historia <button class="link" data-topic="${esc(topic.story.key)}">${esc(topic.story.title)}</button>: aparece en sus búsquedas relacionadas o en los mismos titulares.</p>` : ''}</div>
       ${(topic.angles || []).length ? `<div class="d-section"><h3>Ángulos que también son tendencia</h3><p class="small muted" style="margin:0 0 8px">Temas sueltos de X o Wikipedia ligados a esta historia. Cada uno puede ser un enfoque distinto para tu vídeo.</p><div class="related">${topic.angles.map((a) => `<button class="chip" data-topic="${esc(a.key)}">${esc(a.title)}</button>`).join('')}</div></div>` : ''}
       <div class="d-section"><h3>${esc(topic.series_label || 'Evolución')}</h3><div id="d-chart"></div></div>
-      <div class="d-section"><h3>Qué cuentan los medios</h3>${newsHtml}</div>
+      ${newsHtml ? `<div class="d-section"><h3>${leadTitle ? 'Más titulares' : 'Titulares'}</h3>${newsHtml}</div>` : ''}
       <div class="d-section"><h3>Competencia en YouTube</h3>${ytHtml}</div>
       ${related}
       <div class="d-section"><h3>Llévalo a guion</h3><div class="brief" id="brief">${esc(buildBrief(topic, detail))}</div>
@@ -1194,8 +1180,8 @@ document.addEventListener('keydown', (event) => {
 
 document.addEventListener('change', (event) => {
   const t = event.target;
-  if (t.id === 'hide-utility' || t.id === 'set-utility') { saveSettings({ hide_utility: t.checked }).then(render); return; }
-  if (t.id === 'source-filter') { ui.source = t.value; return render(); }
+  if (t.id === 'set-utility') { saveSettings({ hide_utility: t.checked }).then(render); return; }
+  if (t.id === 'set-name') return saveSettings({ name: t.value });
   if (t.id === 'gsort') { ui.googleSort = t.value; return renderView(); }
   if (t.id === 'efem-round') { ui.efemRound = t.checked; return renderView(); }
   if (t.id === 'efem-spain') { ui.efemSpain = t.checked; return renderView(); }

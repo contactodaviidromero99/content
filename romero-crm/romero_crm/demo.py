@@ -10,7 +10,7 @@ from email.utils import format_datetime
 from urllib.parse import quote
 
 from .analysis import VOLUME_BUCKETS
-from .sources import efemerides, google_trends, news, tiktok, wikipedia, x_trends, youtube
+from .sources import efemerides, google_trends, news, wikipedia, x_trends, youtube
 from .sources.base import SourceResult
 
 H = 3600
@@ -61,22 +61,6 @@ X_TRENDS = [
     ("#GH", 11000, 14), ("Presupuestos", 6100, 5), ("Euribor", None, 4), ("Juan de Austria", 2100, 1),
     ("#LunesDeOtoño", 4300, 7), ("Halloween", 12500, 18), ("DANA", 5200, 8), ("Aitana", 7300, 13),
     ("Champions", 18800, 16), ("Rockstar", 6600, 3), ("Bernabéu", 9100, 20), ("Netflix", 5100, 12),
-]
-
-TIKTOK_TAGS = [
-    ("halloween", 48000, 310_000_000, "Life Services", 0, False), ("otoño", 21000, 120_000_000, "Apparel & Accessories", 2, False),
-    ("gta6", 15000, 95_000_000, "Games", 6, False), ("realmadrid", 14000, 99_000_000, "Sports & Outdoor", -1, False),
-    ("laliga", 12000, 88_000_000, "Sports & Outdoor", 1, False), ("historia", 9000, 64_000_000, "Education", 3, False),
-    ("gym", 9900, 70_000_000, "Sports & Outdoor", 0, False), ("recetasfaciles", 8800, 52_000_000, "Food & Beverage", -2, False),
-    ("curiosidades", 7500, 48_000_000, "Education", 4, False), ("outfitotoño", 6600, 40_000_000, "Apparel & Accessories", 0, True),
-    ("larevuelta", 6000, 41_000_000, "News & Entertainment", 5, False), ("aitana", 5000, 33_000_000, "News & Entertainment", -3, False),
-    ("lepanto", 1800, 9_500_000, "Education", 0, True), ("dana", 3000, 21_000_000, "News & Entertainment", -4, False),
-    ("nobel", 2100, 9_000_000, "Education", 0, True), ("granhermano", 4400, 29_000_000, "News & Entertainment", -1, False),
-]
-
-TIKTOK_SONGS = [
-    ("Épico (versión orquestal)", "Compositor Demo"), ("Ritmo de otoño", "Artista Demo"), ("Noche en Madrid", "Banda Demo"),
-    ("Lluvia de octubre", "Cantante Demo"), ("Tensión (cinemática)", "Estudio Demo"), ("Vuelta al barrio", "Rapero Demo"),
 ]
 
 WIKI_ARTICLES = [
@@ -161,16 +145,21 @@ EFEMERIDES = [
 ]
 
 YOUTUBE_DEMO = {
-    "whatsappcaido": (28, [("WhatsApp CAÍDO hoy: qué está pasando", "Canal Demo Tech", 410000, "3 hours ago", "4:12"),
-                           ("Caída mundial de WhatsApp explicada", "Canal Demo Noticias", 260000, "2 hours ago", "0:58")]),
-    "premionobeldemedicina": (8, [("¿Qué es el Premio Nobel de Medicina? Explicado", "Canal Demo Ciencia", 45000, "1 day ago", "6:40"),
-                                  ("Nobel de Medicina: historia en 60 segundos", "Canal Demo Shorts", 22000, "4 days ago", "0:59")]),
-    "batalladelepanto": (3, [("La batalla de Lepanto en 10 minutos", "Canal Demo Historia", 12000, "5 days ago", "10:22"),
-                             ("Lepanto: el día que cambió el Mediterráneo", "Canal Demo Divulgación", 6100, "6 days ago", "0:55")]),
-    "alcaraz": (20, [("Alcaraz: mejores puntos de la semana", "Canal Demo Tenis", 380000, "2 days ago", "8:03"),
-                     ("Alcaraz, el golpe que nadie esperaba", "Canal Demo Deportes", 190000, "3 days ago", "0:45")]),
-    "gta6": (20, [("GTA 6: todo lo que sabemos", "Canal Demo Gaming", 920000, "4 days ago", "15:31"),
-                  ("GTA 6 en 60 segundos", "Canal Demo Shorts", 510000, "2 days ago", "0:59")]),
+    "whatsappcaido": ("WhatsApp caído", 28, [
+        ("WhatsApp CAÍDO hoy: qué está pasando", "Canal Demo Tech", 410000, "3 hours ago", "4:12"),
+        ("Caída mundial de WhatsApp explicada", "Canal Demo Noticias", 260000, "2 hours ago", "0:58")]),
+    "premionobeldemedicina": ("Premio Nobel de Medicina", 8, [
+        ("¿Qué es el Premio Nobel de Medicina? Explicado", "Canal Demo Ciencia", 45000, "1 day ago", "6:40"),
+        ("Nobel de Medicina: historia en 60 segundos", "Canal Demo Shorts", 22000, "4 days ago", "0:59")]),
+    "batalladelepanto": ("Batalla de Lepanto", 3, [
+        ("La batalla de Lepanto en 10 minutos", "Canal Demo Historia", 12000, "5 days ago", "10:22"),
+        ("Lepanto: el día que cambió el Mediterráneo", "Canal Demo Divulgación", 6100, "6 days ago", "0:55")]),
+    "alcaraz": ("Alcaraz", 20, [
+        ("Alcaraz: mejores puntos de la semana", "Canal Demo Tenis", 380000, "2 days ago", "8:03"),
+        ("Alcaraz, el golpe que nadie esperaba", "Canal Demo Deportes", 190000, "3 days ago", "0:45")]),
+    "gta6": ("GTA 6", 20, [
+        ("GTA 6: todo lo que sabemos", "Canal Demo Gaming", 920000, "4 days ago", "15:31"),
+        ("GTA 6 en 60 segundos", "Canal Demo Shorts", 510000, "2 days ago", "0:59")]),
 }
 
 
@@ -301,31 +290,6 @@ class DemoData:
         items = x_trends.build_items(x_trends.parse_trends24(self.trends24_html()), now=self.now)
         return SourceResult(source="x", ok=True, items=items, meta={"provider": "demo"})
 
-    def tiktok_html(self) -> str:
-        records = []
-        for rank, (name, posts, views, industry, diff, new) in enumerate(TIKTOK_TAGS, 1):
-            curve = [{"time": int(self.now - (6 - d) * 86400), "value": round(0.3 + 0.7 * ((d + 1) / 7) ** (1.5 if diff >= 0 else 0.4), 3)} for d in range(7)]
-            records.append({
-                "hashtagId": str(1000 + rank), "hashtagName": name, "publishCnt": posts, "videoViews": views, "rank": rank,
-                "rankDiff": abs(diff), "rankDiffType": 3 if new else (1 if diff > 0 else 2 if diff < 0 else 4),
-                "industryInfo": {"id": rank, "value": industry}, "trend": curve,
-            })
-        data = {"props": {"pageProps": {"data": {"pagination": {"page": 1, "total": len(records)}, "list": records}}}}
-        return f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script></html>'
-
-    def tiktok_music_html(self) -> str:
-        records = [
-            {"clipId": str(9000 + i), "title": title, "author": author, "rank": i, "rankDiff": i % 3, "rankDiffType": 1 if i % 2 else 4,
-             "link": "https://www.tiktok.com/music/demo", "trend": [{"time": 0, "value": 0.2 + 0.1 * d} for d in range(7)]}
-            for i, (title, author) in enumerate(TIKTOK_SONGS, 1)
-        ]
-        data = {"props": {"pageProps": {"data": {"soundList": records}}}}
-        return f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script></html>'
-
-    def _tiktok(self):
-        return SourceResult(source="tiktok", ok=False, error=tiktok.LOGIN_MESSAGE,
-                            meta={"requires_login": True, "browse_url": tiktok.BROWSE_URL})
-
     def _wikipedia(self):
         today = dt.date.fromtimestamp(self.now)
         days = []
@@ -416,13 +380,14 @@ class DemoData:
 
     def _competitions(self) -> dict:
         out = {}
-        for topic_key, (extra, videos) in YOUTUBE_DEMO.items():
+        for topic_key, (query, extra, videos) in YOUTUBE_DEMO.items():
             padded = list(videos)
             for i in range(extra - len(videos)):
-                padded.append((f"Vídeo relacionado {i + 1}", "Canal Demo", int(videos[-1][2] * (0.8 ** (i + 1))), f"{i % 6 + 1} days ago", "3:10"))
+                padded.append((f"{query}: vídeo {i + 1}", "Canal Demo", int(videos[-1][2] * (0.8 ** (i + 1))), f"{i % 6 + 1} days ago", "3:10"))
+            padded.append(("Otro tema que YouTube mezcla en la búsqueda", "Canal Ajeno", 999000, "1 day ago", "9:59"))
             found = youtube.parse_search(self.youtube_payload(padded))
-            summary = youtube.summarize(topic_key, found)
-            summary.update({"topic_key": topic_key, "topic_title": topic_key})
+            summary = youtube.summarize(query, found)
+            summary.update({"topic_key": topic_key, "topic_title": query})
             out[topic_key] = summary
         return out
 

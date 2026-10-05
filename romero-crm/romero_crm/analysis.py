@@ -7,10 +7,11 @@ import statistics
 import time
 from collections import Counter, defaultdict
 
+from .explain import explain
 from .niches import NICHE_NAMES, NICHE_ORDER, NICHES, classify, is_utility
-from .text import GENERIC_TOKENS, STOPWORDS, casing_map, key, norm, recase, split_hashtag, strip_accents, tokens
+from .text import GENERIC_TOKENS, STOPWORDS, casing_map, fmt_number, key, norm, recase, split_hashtag, strip_accents, tokens
 
-SOURCE_ORDER = ("google", "youtube", "tiktok", "x", "wikipedia", "news")
+SOURCE_ORDER = ("google", "youtube", "x", "wikipedia", "news")
 PHASE_LABELS = {
     "explosivo": "Explosivo",
     "subiendo": "En ascenso",
@@ -23,7 +24,6 @@ DEFAULT_LIFETIME_H = 20.0
 SERIES_LABELS = {
     "google_volume": "Búsquedas acumuladas en Google · registro de Romero CRM",
     "x": "Posición en tendencias de X · últimas horas",
-    "tiktok": "Popularidad en TikTok · últimos 7 días",
     "wikipedia": "Lecturas en Wikipedia desde España · últimos días",
 }
 
@@ -199,7 +199,7 @@ def typical_lifetime(lifecycle: dict, niche: str) -> float:
 
 
 def _phase(topic: dict, now: float):
-    google, x, tiktok, wiki = topic.get("google"), topic.get("x"), topic.get("tiktok"), topic.get("wikipedia")
+    google, x, wiki = topic.get("google"), topic.get("x"), topic.get("wikipedia")
     elapsed = topic.get("elapsed_hours")
     if google:
         if not google.get("active"):
@@ -210,16 +210,16 @@ def _phase(topic: dict, now: float):
         since = f"hace {_hours_text(elapsed)}" if elapsed is not None else "hace poco"
         stalled = trend and trend["watched_hours"] >= 2 and trend["stalled_hours"] >= 2
         if trend and trend["recent_steps"]:
-            climb = f"de {_fmt(trend['from'])}+ a {_fmt(trend['current'])}+ búsquedas"
+            climb = f"de {fmt_number(trend['from'])}+ a {fmt_number(trend['current'])}+ búsquedas"
             young = elapsed is not None and elapsed <= 3
             if trend["recent_steps"] >= 2 or young:
                 prefix = f"Arrancó {since} y ha pasado" if young else "Ha pasado"
                 return "explosivo", f"{prefix} {climb} en menos de 2 h."
             return "subiendo", f"Ha subido {climb} en las últimas 2 h."
         if elapsed is not None and elapsed <= 4 and volume <= 5000 and growth >= 500 and len(topic["sources"]) <= 1 and not stalled:
-            return "temprana", f"Aún pequeño ({_fmt(volume)}+ búsquedas), pero crece un {_pct(growth)} % desde {since}: puede despegar."
+            return "temprana", f"Aún pequeño ({fmt_number(volume)}+ búsquedas), pero crece un {_pct(growth)} % desde {since}: puede despegar."
         if stalled:
-            return "pico", f"Lleva {_hours_text(trend['stalled_hours'])} estable en {_fmt(volume)}+ búsquedas; empezó {since}."
+            return "pico", f"Lleva {_hours_text(trend['stalled_hours'])} estable en {fmt_number(volume)}+ búsquedas; empezó {since}."
         if elapsed is not None and elapsed <= 6 and growth >= 500:
             return "explosivo", f"Arrancó {since} y ya crece un {_pct(growth)} %."
         if elapsed is not None and elapsed <= 12:
@@ -243,15 +243,6 @@ def _phase(topic: dict, now: float):
         if change is not None and change <= -30:
             return "enfriandose", "Las lecturas bajan respecto al día anterior."
         return "pico", "Lecturas estables en lo más leído."
-    if tiktok:
-        change = tiktok.get("rank_change")
-        if tiktok.get("is_new"):
-            return "subiendo", "Nuevo en el ranking semanal de TikTok."
-        if change and change > 0:
-            return "subiendo", f"Sube {change} puestos en TikTok."
-        if change and change < 0:
-            return "enfriandose", f"Baja {abs(change)} puestos en TikTok."
-        return "pico", "Estable en el ranking de TikTok."
     return "pico", ""
 
 
@@ -269,9 +260,9 @@ def _pct(value) -> str:
 
 def _signals(topic: dict) -> list:
     out = []
-    google, x, tiktok, wiki, news = (topic.get(s) for s in ("google", "x", "tiktok", "wikipedia", "news"))
+    google, x, wiki, news = (topic.get(s) for s in ("google", "x", "wikipedia", "news"))
     if google:
-        text = f"{_fmt(google.get('volume'))}+ búsquedas en Google"
+        text = f"{fmt_number(google.get('volume'))}+ búsquedas en Google"
         if google.get("growth_pct"):
             text += f" (+{_pct(google['growth_pct'])} %)"
         out.append({"source": "google", "text": text})
@@ -280,41 +271,27 @@ def _signals(topic: dict) -> list:
         if x.get("hours_in_trends", 0) > 1:
             text += f" · lleva {x['hours_in_trends']} h"
         if x.get("volume"):
-            text += f" · {_fmt(x['volume'])} posts"
+            text += f" · {fmt_number(x['volume'])} posts"
         out.append({"source": "x", "text": text})
-    if tiktok:
-        text = f"{tiktok['title']}: nº {tiktok['rank']} en TikTok España (7 días)"
-        if tiktok.get("posts"):
-            text += f" · {_fmt(tiktok['posts'])} publicaciones"
-        out.append({"source": "tiktok", "text": text})
     if wiki:
-        text = f"{_fmt(wiki['views'])} lecturas en Wikipedia desde España"
+        text = f"{fmt_number(wiki['views'])} lecturas en Wikipedia desde España"
         if wiki.get("change_pct") is not None:
             sign = "+" if wiki["change_pct"] >= 0 else "−"
             text += f" ({sign}{_pct(abs(wiki['change_pct']))} % vs. día anterior)"
         out.append({"source": "wikipedia", "text": text})
     if news and news.get("count"):
-        n = news["count"]
-        out.append({"source": "news", "text": f"{n} titular{'es' if n != 1 else ''} en medios españoles"})
+        outlets = news.get("outlets") or 1
+        text = f"Lo cuentan {outlets} medios españoles" if outlets > 1 else "Lo cuenta 1 medio español"
+        out.append({"source": "news", "text": text})
     return out
 
 
-def _fmt(value) -> str:
-    if value is None:
-        return "—"
-    value = float(value)
-    for limit, suffix in ((1e6, " M"), (1e3, " mil")):
-        if abs(value) >= limit:
-            number = value / limit
-            text = f"{number:.1f}".rstrip("0").rstrip(".") if number < 10 else f"{number:.0f}"
-            return text.replace(".", ",") + suffix
-    return f"{value:.0f}"
 
 
 def build_topics(results: dict, lifecycle: dict, now: float = None) -> list:
     now = now or time.time()
     entries = []
-    for source in ("google", "x", "tiktok", "wikipedia"):
+    for source in ("google", "x", "wikipedia"):
         result = results.get(source)
         if result and result.ok:
             for item in result.items:
@@ -353,6 +330,8 @@ def build_topics(results: dict, lifecycle: dict, now: float = None) -> list:
             topics.append(topic)
 
     link_stories(topics)
+    for topic in topics:
+        explain(topic, now)
     _score(topics, results, lifecycle, now)
     topics.sort(key=lambda t: (-t["heat"], -t["potential"]))
     for rank, topic in enumerate(topics, 1):
@@ -447,9 +426,8 @@ def _aggregate(members: list, now: float):
 
     google = best("google", lambda i: (not i.get("active"), -(i.get("volume") or 0)))
     x = best("x", lambda i: i.get("rank") or 999)
-    tiktok = best("tiktok", lambda i: i.get("rank") or 999)
     wiki = best("wikipedia", lambda i: i.get("rank") or 999)
-    primary = google or x or wiki or tiktok
+    primary = google or x or wiki
     if not primary:
         return None
 
@@ -457,10 +435,8 @@ def _aggregate(members: list, now: float):
         title, topic_key = google["title"], google["id"]
     elif wiki:
         title, topic_key = wiki["title"], wiki["id"]
-    elif x:
-        title, topic_key = x["title"], x["id"]
     else:
-        title, topic_key = tiktok["title"], tiktok["id"]
+        title, topic_key = x["title"], x["id"]
 
     sources = [s for s in SOURCE_ORDER if any(m.source == s for m in members)]
     started = google.get("started_at") if google else (x.get("first_seen") if x else None)
@@ -471,8 +447,6 @@ def _aggregate(members: list, now: float):
         series, series_kind = google_series, "google_volume"
     elif x and any(x.get("series") or []):
         series, series_kind = x["series"], "x"
-    elif tiktok and tiktok.get("series"):
-        series, series_kind = tiktok["series"], "tiktok"
     elif wiki and wiki.get("series"):
         series, series_kind = wiki["series"], "wikipedia"
     elif google_series:
@@ -486,8 +460,6 @@ def _aggregate(members: list, now: float):
         metric = {"value": x["volume"], "kind": "posts en X", "plus": False}
     elif wiki:
         metric = {"value": wiki["views"], "kind": "lecturas", "plus": False}
-    elif tiktok and tiktok.get("posts"):
-        metric = {"value": tiktok["posts"], "kind": "publicaciones", "plus": False}
     else:
         metric = {"value": None, "kind": "", "plus": False}
 
@@ -499,7 +471,6 @@ def _aggregate(members: list, now: float):
         "sources": sources,
         "google": google,
         "x": x,
-        "tiktok": tiktok,
         "wikipedia": wiki,
         "news": {"count": 0, "items": []},
         "related": (google or {}).get("related", [])[:10],
@@ -511,7 +482,7 @@ def _aggregate(members: list, now: float):
         "series_kind": series_kind,
         "series_label": SERIES_LABELS.get(series_kind, ""),
         "series_end": int(now) if series_kind == "google_volume" else None,
-        "series_step": {"google_volume": VOLUME_STEP_SECONDS, "x": 3600, "tiktok": 86400, "wikipedia": 86400}.get(series_kind),
+        "series_step": {"google_volume": VOLUME_STEP_SECONDS, "x": 3600, "wikipedia": 86400}.get(series_kind),
         "volume_trend": (google or {}).get("volume_trend"),
         "metric": metric,
         "growth_pct": (google or {}).get("growth_pct"),
@@ -524,6 +495,28 @@ def _aggregate(members: list, now: float):
 _TOPICAL_SECTIONS = ("deportes", "economia", "tecnologia", "entretenimiento", "ciencia", "salud", "internacional")
 
 
+def dedupe_news(items: list) -> list:
+    """Quita titulares repetidos sin perder lo que aporta cada copia: cobertura, origen y datos que falten."""
+    kept_by_ident, unique = {}, []
+    for item in items:
+        ident = key(item.get("title") or "")[:60]
+        if not ident:
+            continue
+        kept = kept_by_ident.get(ident)
+        if kept is None:
+            kept_by_ident[ident] = dict(item)
+            unique.append(kept_by_ident[ident])
+            continue
+        if item.get("coverage"):
+            kept["coverage"] = max(kept.get("coverage") or 1, item["coverage"])
+        if item.get("from_trend"):
+            kept["from_trend"] = True
+        for field in ("url", "source", "published"):
+            if not kept.get(field) and item.get(field):
+                kept[field] = item[field]
+    return unique
+
+
 def _attach_news(topic: dict, members: list, headlines: list) -> None:
     token_sets = topic.pop("_member_tokens")
     keys = topic.pop("_member_keys")
@@ -532,15 +525,14 @@ def _attach_news(topic: dict, members: list, headlines: list) -> None:
         if _headline_match(token_sets, keys, headline_tokens, headline_key):
             matched.append(item)
     google_news = (topic.get("google") or {}).get("news") or []
-    combined = [{"title": n.get("title"), "url": n.get("url"), "source": n.get("source"), "published": n.get("time")} for n in google_news]
-    combined += [{"title": n["title"], "url": n["url"], "source": n["source"], "published": n.get("published")} for n in matched]
-    seen, unique = set(), []
-    for item in combined:
-        ident = key(item.get("title") or "")[:60]
-        if ident and ident not in seen:
-            seen.add(ident)
-            unique.append(item)
-    topic["news"] = {"count": len(matched), "items": unique[:6]}
+    combined = [{"title": n.get("title"), "url": n.get("url"), "source": n.get("source"), "published": n.get("time"),
+                 "from_trend": True} for n in google_news]
+    combined += [{"title": n["title"], "url": n["url"], "source": n["source"], "published": n.get("published"),
+                  "coverage": n.get("coverage") or 1} for n in matched]
+    unique = dedupe_news(combined)
+    sources = {n["source"] for n in matched if n.get("source")}
+    outlets = max([len(sources)] + [n.get("coverage") or 1 for n in matched]) if matched else 0
+    topic["news"] = {"count": len(matched), "outlets": outlets, "items": unique[:10]}
     topic["_headlines"] = [n["title"] for n in unique if n.get("title")]
     if matched and "news" not in topic["sources"]:
         topic["sources"].append("news")
@@ -548,8 +540,6 @@ def _attach_news(topic: dict, members: list, headlines: list) -> None:
     base, prior = None, None
     if topic.get("google") and topic["google"].get("categories"):
         base = topic["google"]["categories"][0]
-    elif topic.get("tiktok") and topic["tiktok"].get("niche_hint"):
-        base, prior = topic["tiktok"]["niche_hint"], 1.0
     elif matched:
         sections = Counter(m.get("section") for m in matched if m.get("section") in _TOPICAL_SECTIONS)
         if sections:
@@ -571,11 +561,10 @@ def _score(topics: list, results: dict, lifecycle: dict, now: float) -> None:
     x_items = items("x")
     x_volume = percentiles({i["id"]: i.get("volume") for i in x_items})
     x_total = max(len(x_items), 1)
-    tiktok_total = max(len(items("tiktok")), 1)
     wiki_views = percentiles({i["id"] + i.get("project", ""): i.get("views") for i in items("wikipedia")})
 
     for topic in topics:
-        google, x, tiktok, wiki = topic["google"], topic["x"], topic["tiktok"], topic["wikipedia"]
+        google, x, wiki = topic["google"], topic["x"], topic["wikipedia"]
         reach, momentum = [], []
         if google:
             reach.append(google_volume.get(google["id"], 0.3))
@@ -593,17 +582,6 @@ def _score(topics: list, results: dict, lifecycle: dict, now: float) -> None:
                 momentum.append(min(1.0, 0.5 + change / 20))
             elif change and change < 0:
                 momentum.append(0.2)
-            else:
-                momentum.append(0.4)
-        if tiktok:
-            reach.append((1 - (tiktok["rank"] - 1) / max(tiktok_total - 1, 1)) * 0.75)
-            change = tiktok.get("rank_change")
-            if tiktok.get("is_new"):
-                momentum.append(0.7)
-            elif change and change > 0:
-                momentum.append(min(1.0, 0.5 + change / 30))
-            elif change and change < 0:
-                momentum.append(0.25)
             else:
                 momentum.append(0.4)
         if wiki:

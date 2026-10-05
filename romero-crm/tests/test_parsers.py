@@ -3,10 +3,10 @@ import json
 import time
 import unittest
 
-from romero_crm import analysis
+from romero_crm import analysis, explain
 from romero_crm.demo import DemoData
 from romero_crm.niches import classify, is_utility
-from romero_crm.sources import efemerides, google_trends, news, tiktok, wikipedia, x_trends, youtube
+from romero_crm.sources import efemerides, google_trends, news, wikipedia, x_trends, youtube
 from romero_crm.text import casing_map, key, parse_ago_seconds, parse_compact_number, parse_duration, recase
 
 
@@ -137,53 +137,6 @@ class XTests(unittest.TestCase):
         self.assertEqual(len(items["Veterano"]["series"]), 8)
 
 
-class TikTokTests(unittest.TestCase):
-    def test_next_data_hashtags_and_songs(self):
-        demo = DemoData()
-        raw = next(tiktok.find_record_lists(tiktok.extract_next_data(demo.tiktok_html()), tiktok._is_hashtag))
-        tags = tiktok.parse_hashtags(raw)
-        self.assertEqual(tags[0]["title"], "#halloween")
-        self.assertEqual(tags[0]["niche_hint"], "ocio")
-        self.assertTrue(any(t["is_new"] for t in tags))
-        songs_raw = next(tiktok.find_record_lists(tiktok.extract_next_data(demo.tiktok_music_html()), tiktok._is_song))
-        self.assertEqual(len(tiktok.parse_songs(songs_raw)), 6)
-
-    def test_login_wall_is_reported_honestly(self):
-        class FakeResponse:
-            def __init__(self, status, text="", payload=None):
-                self.status_code, self.text, self._payload = status, text, payload
-
-            def json(self):
-                return self._payload
-
-        class FakeSession:
-            calls = []
-
-            def get(self, url, **kwargs):
-                self.calls.append(url)
-                if "creative_radar_api" in url:
-                    return FakeResponse(200, payload={"code": 40101, "msg": "no permission"})
-                return FakeResponse(200, text="<html><title>TikTok One Creative Suite</title></html>")
-
-        original = tiktok.make_session
-        tiktok.make_session = FakeSession
-        try:
-            result = tiktok.fetch()
-        finally:
-            tiktok.make_session = original
-        self.assertFalse(result.ok)
-        self.assertTrue(result.meta["requires_login"])
-        self.assertIn("TikTok One", result.error)
-        self.assertLessEqual(len(FakeSession.calls), 2)
-
-    def test_snake_case_api_records(self):
-        records = [{"hashtag_name": "historia", "publish_cnt": 100, "video_views": 2000, "rank": 1, "rank_diff": 3,
-                    "rank_diff_type": 2, "industry_info": {"value": "Education"}}]
-        item = tiktok.parse_hashtags(records)[0]
-        self.assertEqual(item["rank_change"], -3)
-        self.assertEqual(item["niche_hint"], "educacion")
-
-
 class WikipediaTests(unittest.TestCase):
     def test_filters_and_changes(self):
         payload = {"items": [{"articles": [
@@ -235,6 +188,20 @@ class YouTubeTests(unittest.TestCase):
         self.assertTrue(video["is_short"])
         self.assertEqual(video["views"], 1500000)
 
+    def test_only_videos_about_the_topic_count(self):
+        self.assertTrue(youtube.is_relevant("Ángel Arroyo, el ciclista que pudo ganar el Tour", "Ángel Arroyo"))
+        self.assertFalse(youtube.is_relevant("Mi rutina de mañana | Ángel", "Ángel Arroyo"))
+        self.assertFalse(youtube.is_relevant("Arroyo marca el gol de la victoria", "Ángel Arroyo"))
+        self.assertTrue(youtube.is_relevant("Lepanto: el día que cambió el Mediterráneo", "Batalla de Lepanto"))
+        self.assertFalse(youtube.is_relevant("Batalla de gallos: la gran final", "Batalla de Lepanto"))
+        self.assertTrue(youtube.is_relevant("Caída mundial de WhatsApp explicada", "WhatsApp caído"))
+        self.assertFalse(youtube.is_relevant("Electricidad gratis en casa", "Elecciones"))
+        found = [{"title": "Ángel Arroyo vlog", "views": 23}, {"title": "Mi gato", "views": 14},
+                 {"title": "Ángel Arroyo: adiós a un ciclista", "views": 50000}]
+        summary = youtube.summarize("Ángel Arroyo", found, "Ángel Arroyo ciclista")
+        self.assertEqual(summary["count"], 2)
+        self.assertIn("ciclista", summary["search_url"])
+
     def test_search_params(self):
         self.assertEqual(youtube.search_params(sort=3, upload=3, kind=1), "CAMSBAgDEAE=")
 
@@ -273,7 +240,7 @@ class EfemeridesTests(unittest.TestCase):
 class AnalysisTests(unittest.TestCase):
     def test_demo_pipeline_merges_platforms(self):
         demo = DemoData()
-        results = {s: demo.load(s) for s in ("google", "x", "tiktok", "wikipedia", "news")}
+        results = {s: demo.load(s) for s in ("google", "x", "wikipedia", "news")}
         analysis.recase_google(results)
         topics = analysis.build_topics(results, {}, demo.now)
         lepanto = next(t for t in topics if t["key"] == "batalladelepanto")
@@ -384,6 +351,106 @@ class AnalysisTests(unittest.TestCase):
         topics = analysis.build_topics(results, {}, time.time())
         madrid = next(t for t in topics if t["title"] == "Madrid")
         self.assertEqual(madrid["sources"], ["x"])
+
+    def test_duplicate_headlines_keep_their_coverage(self):
+        merged = analysis.dedupe_news([
+            {"title": "Lepanto, 455 años después", "source": "Diario A", "from_trend": True},
+            {"title": "Lepanto, 455 años después", "source": "Diario A", "url": "https://a.example/l", "coverage": 5},
+        ])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["coverage"], 5)
+        self.assertTrue(merged[0]["from_trend"])
+        self.assertEqual(merged[0]["url"], "https://a.example/l")
+        demo = DemoData()
+        results = {name: demo.load(name) for name in ("google", "x", "wikipedia", "news")}
+        topics = analysis.build_topics(results, {}, time.time())
+        lepanto = next(t for t in topics if t["key"] == "batalladelepanto")
+        self.assertGreaterEqual(lepanto["news"]["outlets"], 2)
+
+
+class ExplainTests(unittest.TestCase):
+    def test_clean_headline_removes_live_blog_noise(self):
+        self.assertEqual(
+            explain.clean_headline("Pedro Sánchez convoca elecciones anticipadas el 29 de noviembre, en directo: última hora del adelanto electoral"),
+            "Pedro Sánchez convoca elecciones anticipadas el 29 de noviembre")
+        self.assertEqual(
+            explain.clean_headline("Adelanto electoral de Sánchez, en directo | Sánchez disuelve las Cortes y convoca elecciones generales para el 29 de noviembre"),
+            "Sánchez disuelve las Cortes y convoca elecciones generales para el 29 de noviembre")
+        self.assertEqual(explain.clean_headline("ÚLTIMA HORA: Muere Ángel Arroyo, ciclista"), "Muere Ángel Arroyo, ciclista")
+
+    def test_same_entity(self):
+        self.assertTrue(explain.same_entity("Feijóo", "Alberto Núñez Feijóo"))
+        self.assertTrue(explain.same_entity("Moncloa", "Palacio de la Moncloa"))
+        self.assertTrue(explain.same_entity("PSOE", "Partido Socialista Obrero Español"))
+        self.assertTrue(explain.same_entity("Frente Amplio", "Frente Amplio (Uruguay)"))
+        self.assertFalse(explain.same_entity("Elecciones", "Elección"))
+        self.assertFalse(explain.same_entity("Votar", "Voto"))
+        self.assertFalse(explain.same_entity("WhatsApp caído", "WhatsApp"))
+
+    def test_description_must_fit_the_topic(self):
+        battery = {"niche": "tecnologia", "niches": ["tecnologia"]}
+        self.assertFalse(explain.description_fits(battery, "instrumento musical de percusión"))
+        self.assertFalse(explain.description_fits(battery, "página de desambiguación de Wikimedia"))
+        rider = {"niche": "deportes", "niches": ["deportes"]}
+        self.assertTrue(explain.description_fits(rider, "ciclista español"))
+        town = {"niche": "politica", "niches": ["politica"]}
+        self.assertTrue(explain.description_fits(town, "municipio de la provincia de Alicante"))
+
+    def test_single_words_need_proper_noun_evidence(self):
+        battery = {"title": "Batería", "news": {"items": [{"title": "Cómo cuidar la batería del móvil"}]}}
+        leader = {"title": "Feijóo", "news": {"items": [{"title": "El PP de Feijóo sube en las encuestas"}]}}
+        self.assertFalse(explain.looks_proper(battery))
+        self.assertTrue(explain.looks_proper(leader))
+        self.assertTrue(explain.looks_proper({"title": "Frente Amplio", "news": {"items": []}}))
+
+    def test_context_word_for_youtube(self):
+        self.assertEqual(explain.context_word("ciclista español"), "ciclista")
+        self.assertEqual(explain.context_word("película de 2026 dirigida por Los Javis"), "película")
+        self.assertIsNone(explain.context_word("página de desambiguación"))
+
+    def test_why_uses_the_most_relevant_headline(self):
+        now = time.time()
+        topic = {
+            "title": "Feijóo", "niche": "politica", "niches": ["politica"], "google": {"volume": 20000}, "x": None, "wikipedia": None,
+            "news": {"count": 2, "outlets": 2, "items": [
+                {"title": "El Ibex 35 abre en positivo", "source": "Expansión", "published": now - 600, "coverage": 8},
+                {"title": "Feijóo presenta al PP como la alternativa ante el adelanto electoral", "source": "El País",
+                 "published": now - 3600, "coverage": 3},
+            ]},
+        }
+        explain.explain(topic, now)
+        self.assertEqual(topic["why"]["source"], "El País")
+        self.assertIn("Feijóo", topic["why"]["title"])
+        self.assertEqual(topic["summary"], "20 mil+ búsquedas en Google · lo cuentan 2 medios")
+
+    def test_unrelated_headlines_give_no_why(self):
+        topic = {"title": "Cortés", "niche": "otros", "news": {"count": 1, "outlets": 1, "items": [
+            {"title": "Sánchez disuelve las Cortes", "source": "ABC", "published": time.time(), "coverage": 2}]}}
+        explain.explain(topic)
+        self.assertIsNone(topic["why"])
+
+    def test_wikipedia_lookup_follows_redirects(self):
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {"query": {
+                    "redirects": [{"from": "Feijóo", "to": "Alberto Núñez Feijóo"}],
+                    "pages": [
+                        {"title": "Alberto Núñez Feijóo", "description": "político español"},
+                        {"title": "Frente Amplio", "description": "página de desambiguación", "pageprops": {"disambiguation": ""}},
+                        {"title": "Inexistente", "missing": True},
+                    ]}}
+
+        class FakeSession:
+            def get(self, url, **kwargs):
+                return FakeResponse()
+
+        found = wikipedia.lookup_titles(FakeSession(), ["Feijóo", "Frente Amplio", "Inexistente"])
+        self.assertEqual(found["Feijóo"]["page"], "Alberto Núñez Feijóo")
+        self.assertEqual(found["Feijóo"]["description"], "político español")
+        self.assertTrue(found["Frente Amplio"]["disambiguation"])
+        self.assertTrue(found["Inexistente"]["missing"])
 
 
 def x_trends_result(names):

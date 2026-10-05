@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
 import statistics
 import time
 from urllib.parse import quote
 
 from ..net import TIMEOUT, SourceError, check, make_session
-from ..text import parse_ago_seconds, parse_compact_number, parse_duration
+from ..text import GENERIC_TOKENS, norm, parse_ago_seconds, parse_compact_number, parse_duration, tokens
 from .base import SourceResult
 
 SEARCH_API = "https://www.youtube.com/youtubei/v1/search"
@@ -201,12 +202,39 @@ def search(query: str, params: str = None) -> list:
     return parse_search(json.loads(match.group(1)))
 
 
-def competition(query: str) -> dict:
-    return summarize(query, search(query))
+def _root(token: str) -> str:
+    return token[:max(4, len(token) - 2)]
 
 
-def summarize(query: str, found: list) -> dict:
-    videos = [v for v in found if v.get("views") is not None][:20]
+# Palabras que acompañan al tema pero no lo identifican: un vídeo sobre «Batalla de Lepanto»
+# puede titularse solo «Lepanto…», pero uno sobre «Ángel Arroyo» tiene que nombrarle entero.
+_COMMON = GENERIC_TOKENS | {
+    "batalla", "guerra", "caida", "caido", "huelga", "alerta", "gala", "concierto", "festival", "juicio",
+    "detenido", "detenida", "accidente", "incendio", "temporal", "aniversario", "medicina", "literatura",
+    "fisica", "quimica", "paz", "economia", "ayer", "dia", "noche", "semana", "polemica", "entrevista",
+}
+
+
+def is_relevant(title: str, query: str) -> bool:
+    wanted = [t for t in tokens(query) if len(t) >= 3] or tokens(query)
+    if not wanted:
+        return True
+    core = [t for t in wanted if t not in _COMMON] or wanted
+    words = tokens(title)
+    hits = sum(1 for t in core if any(w.startswith(_root(t)) for w in words))
+    return hits >= (len(core) if len(core) <= 3 else math.ceil(0.75 * len(core)))
+
+
+def competition(query: str, context: str = None) -> dict:
+    search_query = query
+    if context and norm(context) not in norm(query):
+        search_query = f"{query} {context}"
+    return summarize(query, search(search_query), search_query)
+
+
+def summarize(query: str, found: list, search_query: str = None) -> dict:
+    search_query = search_query or query
+    videos = [v for v in found if v.get("views") is not None and is_relevant(v.get("title") or "", query)][:20]
     views = sorted((v["views"] for v in videos), reverse=True)
     count = len(videos)
     top = views[0] if views else 0
@@ -229,7 +257,7 @@ def summarize(query: str, found: list) -> dict:
         "label": label,
         "videos": videos[:10],
         "checked_at": int(time.time()),
-        "search_url": f"https://www.youtube.com/results?search_query={quote(query)}&sp={quote(search_params(sort=SORT_VIEWS, upload=UPLOAD_WEEK, kind=TYPE_VIDEO))}",
+        "search_url": f"https://www.youtube.com/results?search_query={quote(search_query)}&sp={quote(search_params(sort=SORT_VIEWS, upload=UPLOAD_WEEK, kind=TYPE_VIDEO))}",
     }
 
 
@@ -241,7 +269,7 @@ def fetch_for_topics(topics: list, cache: dict, max_age: int = 6 * 3600) -> Sour
             items.append(cached)
             continue
         try:
-            result = competition(topic["query"])
+            result = competition(topic["query"], topic.get("context"))
             result.update({"topic_key": topic["key"], "topic_title": topic["title"]})
             cache[topic["key"]] = result
             items.append(result)

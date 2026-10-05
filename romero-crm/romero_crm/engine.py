@@ -6,13 +6,17 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import APP_NAME, APP_VERSION, analysis
+from . import APP_NAME, APP_VERSION, analysis, explain
+from .net import APP_UA, make_session
 from .niches import NICHES, classify
-from .sources import efemerides, google_trends, news, tiktok, wikipedia, x_trends, youtube
+from .sources import efemerides, google_trends, news, wikipedia, x_trends, youtube
 from .sources.base import SOURCE_LABELS, SourceResult, failure
 
-TOPIC_SOURCES = ("google", "x", "tiktok", "wikipedia", "news")
-CADENCE_MINUTES = {"tiktok": 360, "wikipedia": 180, "google_week": 180, "efemerides": 720}
+CADENCE_MINUTES = {"wikipedia": 180, "google_week": 180, "efemerides": 720}
+EXPLAIN_TOP = 24
+TREND_NEWS_LIMIT = 10
+DESCRIPTION_TTL = 24 * 3600
+TREND_NEWS_TTL = 45 * 60
 
 
 class Engine:
@@ -31,6 +35,8 @@ class Engine:
         self.last_error = None
         self._detail_cache = {}
         self._youtube_cache = storage.load_json("youtube-cache.json") or {}
+        self._description_cache = storage.load_json("descriptions-cache.json") or {}
+        self._trend_news_cache = {}
 
     def start(self) -> None:
         threading.Thread(target=self._scheduler, name="romero-scheduler", daemon=True).start()
@@ -89,13 +95,12 @@ class Engine:
     def _fetchers(self) -> dict:
         if self.demo_loader:
             return {sid: (lambda sid=sid: self.demo_loader(sid)) for sid in
-                    ("google", "google_week", "x", "tiktok", "wikipedia", "news", "efemerides")}
+                    ("google", "google_week", "x", "wikipedia", "news", "efemerides")}
         cache_dir = self.storage.cache_dir
         return {
             "google": lambda: google_trends.fetch(hours=24),
             "google_week": lambda: google_trends.fetch(hours=168),
             "x": x_trends.fetch,
-            "tiktok": tiktok.fetch,
             "wikipedia": wikipedia.fetch,
             "news": news.fetch,
             "efemerides": lambda: efemerides.fetch(cache_dir),
@@ -112,7 +117,7 @@ class Engine:
             if source != "efemerides" and not enabled.get(switch, True):
                 continue
             minutes = CADENCE_MINUTES.get(source, base_minutes)
-            if force and source in ("tiktok", "wikipedia", "efemerides"):
+            if force and source in ("wikipedia", "efemerides"):
                 minutes = min(minutes, 30)
             if force or self._is_stale(source, minutes):
                 due.append(source)
@@ -147,6 +152,7 @@ class Engine:
         lifecycle = analysis.lifecycle_stats(google_rows)
         active_results = {s: r for s, r in self.results.items() if enabled.get(s if s != "google_week" else "google", True)}
         topics = analysis.build_topics(active_results, lifecycle, now)
+        self._enrich(topics, now)
 
         wiki = self.results.get("wikipedia")
         if wiki and wiki.ok:
@@ -185,6 +191,73 @@ class Engine:
         base = (item.get("categories") or [None])[0]
         return classify(item.get("title") or "", item.get("related") or [], [n.get("title") or "" for n in item.get("news") or []], base)[0]
 
+    def _enrich(self, topics: list, now: float) -> None:
+        if self.demo_loader:
+            return
+        targets = [t for t in topics if not t["utility"]][:EXPLAIN_TOP]
+        for step in (self._add_descriptions, self._add_trend_news):
+            try:
+                step(targets, now)
+            except Exception:
+                traceback.print_exc()
+        for topic in targets:
+            explain.explain(topic, now)
+
+    def _add_descriptions(self, targets: list, now: float) -> None:
+        wanted = [t for t in targets if not t.get("description") and not t["title"].startswith("#") and explain.looks_proper(t)]
+        pending = [t["title"] for t in wanted
+                   if now - (self._description_cache.get(t["title"]) or {}).get("at", 0) > DESCRIPTION_TTL]
+        if pending:
+            found = wikipedia.lookup_titles(make_session(APP_UA), pending[:50])
+            for title, info in found.items():
+                self._description_cache[title] = dict(info, at=now)
+            self._description_cache = {k: v for k, v in self._description_cache.items() if now - v.get("at", 0) < 7 * 86400}
+            self.storage.save_json("descriptions-cache.json", self._description_cache)
+        for topic in wanted:
+            info = self._description_cache.get(topic["title"]) or {}
+            description = info.get("description")
+            if not description or info.get("missing") or info.get("disambiguation"):
+                continue
+            if not explain.same_entity(topic["title"], info.get("page") or "") or not explain.description_fits(topic, description):
+                continue
+            topic["extra_description"] = description
+            if topic["niche"] == "otros":
+                niches = classify(topic["title"], topic.get("related") or [], [], None, description)
+                if niches[0] != "otros":
+                    topic["niches"], topic["niche"] = niches, niches[0]
+
+    def _add_trend_news(self, targets: list, now: float) -> None:
+        self._trend_news_cache = {k: v for k, v in self._trend_news_cache.items() if now - v["at"] < 2 * 3600}
+        need = [t for t in targets if not t.get("why") and (t.get("google") or {}).get("news_tokens")][:TREND_NEWS_LIMIT]
+
+        def fetch(topic):
+            google = topic["google"]
+            cache_key = f"{google['id']}:{google.get('started_at') or 0}"
+            cached = self._trend_news_cache.get(cache_key)
+            if cached and now - cached["at"] < TREND_NEWS_TTL:
+                return topic, cached["items"]
+            items = google_trends.fetch_news_by_tokens(google["news_tokens"][:3])
+            self._trend_news_cache[cache_key] = {"at": now, "items": items}
+            return topic, items
+
+        if not need:
+            return
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for future in as_completed([pool.submit(fetch, t) for t in need]):
+                try:
+                    topic, items = future.result()
+                except Exception:
+                    continue
+                extra = [{"title": n["title"], "url": n["url"], "source": n["source"], "published": n.get("time"),
+                          "from_trend": True} for n in items]
+                topic["news"]["items"] = analysis.dedupe_news(extra + topic["news"]["items"])[:10]
+
+    @staticmethod
+    def _youtube_context(topic: dict):
+        if topic.get("what") and not topic.get("what_subject"):
+            return explain.context_word(topic["what"])
+        return None
+
     def _refresh_youtube(self, topics: list, limit: int, force: bool) -> None:
         candidates = [t for t in topics if not t["utility"]][:limit]
         self.progress["youtube"] = "running"
@@ -195,7 +268,7 @@ class Engine:
         else:
             max_age = 1800 if force else 6 * 3600
             result = youtube.fetch_for_topics(
-                [{"key": t["key"], "title": t["title"], "query": t["query"]} for t in candidates],
+                [{"key": t["key"], "title": t["title"], "query": t["query"], "context": self._youtube_context(t)} for t in candidates],
                 self._youtube_cache, max_age=max_age,
             )
             self.storage.save_json("youtube-cache.json", self._prune_youtube_cache())
@@ -219,7 +292,7 @@ class Engine:
     def _source_status(self) -> dict:
         settings = self.settings.get()
         status = {}
-        for source in ("google", "google_week", "youtube", "tiktok", "x", "wikipedia", "news", "efemerides"):
+        for source in ("google", "google_week", "youtube", "x", "wikipedia", "news", "efemerides"):
             result = self.results.get(source)
             switch = "google" if source == "google_week" else source
             status[source] = {
@@ -240,7 +313,6 @@ class Engine:
             result = self.results.get(source)
             return result.items if result and result.ok else []
 
-        tiktok_result = self.results.get("tiktok")
         news_result = self.results.get("news")
         efem = self.results.get("efemerides")
         topic_by_key = {t["key"]: t for t in topics}
@@ -253,8 +325,6 @@ class Engine:
         x_items = result_items("x")
         for item in x_items:
             item["niche"] = topic_niche.get(("x", item["id"])) or classify(item["title"])[0]
-        for item in result_items("tiktok"):
-            item["niche"] = classify(item["name"], base=item.get("niche_hint"), prior=1.0)[0]
 
         return {
             "app": {"name": APP_NAME, "version": APP_VERSION, "demo": bool(self.demo_loader)},
@@ -272,11 +342,6 @@ class Engine:
             "platforms": {
                 "google": google_items,
                 "x": x_items,
-                "tiktok": {
-                    "hashtags": result_items("tiktok"),
-                    "songs": (tiktok_result.meta or {}).get("songs", []) if tiktok_result and tiktok_result.ok else [],
-                    "browse_url": tiktok.BROWSE_URL,
-                },
                 "wikipedia": result_items("wikipedia"),
                 "news": {
                     "items": result_items("news"),
@@ -357,7 +422,7 @@ class Engine:
             detail["youtube"] = cached_youtube
         elif self.settings.get()["sources"].get("youtube", True):
             try:
-                result = youtube.competition(topic["query"])
+                result = youtube.competition(topic["query"], self._youtube_context(topic))
                 result.update({"topic_key": topic_key, "topic_title": topic["title"]})
                 self._youtube_cache[topic_key] = result
                 detail["youtube"] = result

@@ -89,6 +89,36 @@ def fetch_descriptions(session, project: str, articles: list) -> dict:
     return result
 
 
+def lookup_titles(session, titles: list, lang: str = "es") -> dict:
+    """Descripción corta de cada título (siguiendo redirecciones) y si es una página de desambiguación."""
+    result = {}
+    for start in range(0, len(titles), 50):
+        chunk = titles[start:start + 50]
+        params = {
+            "action": "query", "format": "json", "formatversion": "2", "redirects": "1",
+            "prop": "description|pageprops", "ppprop": "disambiguation", "titles": "|".join(chunk),
+        }
+        response = check(session.get(f"https://{lang}.wikipedia.org/w/api.php", params=params, timeout=TIMEOUT), "Wikipedia")
+        query = response.json().get("query") or {}
+        alias = {}
+        for mapping in (query.get("normalized") or []) + (query.get("redirects") or []):
+            alias[mapping.get("from")] = mapping.get("to")
+        pages = {p.get("title"): p for p in query.get("pages") or []}
+        for title in chunk:
+            resolved, seen = title, set()
+            while resolved in alias and resolved not in seen:
+                seen.add(resolved)
+                resolved = alias[resolved]
+            page = pages.get(resolved) or {}
+            result[title] = {
+                "page": resolved,
+                "description": page.get("description"),
+                "missing": bool(page.get("missing")) or not page,
+                "disambiguation": "disambiguation" in (page.get("pageprops") or {}),
+            }
+    return result
+
+
 def build_items(days: list, descriptions: dict) -> list:
     latest_day, latest = days[0]
     previous = {(r["project"], r["article"]): r["views"] for r in days[1][1]} if len(days) > 1 else {}

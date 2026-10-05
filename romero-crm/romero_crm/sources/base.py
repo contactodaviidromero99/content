@@ -7,7 +7,6 @@ from typing import Optional
 SOURCE_LABELS = {
     "google": "Google Trends",
     "youtube": "YouTube",
-    "tiktok": "TikTok",
     "x": "X (Twitter)",
     "wikipedia": "Wikipedia",
     "news": "Noticias",
