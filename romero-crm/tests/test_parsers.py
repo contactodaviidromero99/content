@@ -440,6 +440,14 @@ class ExplainTests(unittest.TestCase):
         explain.explain(topic, now)
         self.assertEqual(topic["why"]["source"], "20Minutos")
 
+    def test_shopping_articles_never_explain_a_trend(self):
+        battery = {"title": "Batería"}
+        self.assertFalse(explain.qualifies(battery, {"title": "Cinco móviles con gran batería y carga rápida", "from_trend": True}))
+        self.assertFalse(explain.qualifies(battery, {"title": "La batería externa Philips, rebajada por tiempo limitado", "from_trend": True}))
+        self.assertTrue(explain.qualifies({"title": "Vinicius"}, {"title": "Vinicius marca en el descuento y salva al Madrid"}))
+        self.assertTrue(explain.qualifies({"title": "29-N"}, {"title": "Qué se vota el 29-N y cómo votar por correo"}))
+        self.assertEqual(explain._sentence_case("municipio de Alicante‎, España"), "Municipio de Alicante, España")
+
     def test_context_must_match_what_is_happening(self):
         now = time.time()
         topic = {"title": "Elecciones", "niche": "politica", "niches": ["politica"],

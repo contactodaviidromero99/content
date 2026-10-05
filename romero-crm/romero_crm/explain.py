@@ -12,6 +12,15 @@ _LIVE_SEGMENT = re.compile(r"\b(?:%s)\b" % _LIVE_WORDS, re.I)
 _LIVE_INLINE = re.compile(r",?\s*\b(?:en directo|en vivo|minuto a minuto)\b\s*[:|\-–—]?\s*", re.I)
 _LEAD_TAG = re.compile(r"^(?:última hora|ultima hora|directo|v[íi]deo|fotos?|exclusiva|opini[óo]n)\s*[:|\-–—]\s*", re.I)
 _DISAMBIGUATION = re.compile(r"desambiguaci|disambiguation|página de wikimedia|wikimedia list", re.I)
+# Artículos de compras (ofertas, comparativas de productos): nunca explican por qué algo es tendencia,
+# aunque Google los asocie a la búsqueda («cinco móviles con gran batería…»). Solo expresiones
+# inequívocas: «oferta» o «descuento» a secas también salen en noticias («gol en el descuento»).
+_SHOPPING = re.compile(
+    r"\b(?:chollos?|precio m[ií]nimo|a mitad de precio|con descuento|en oferta|black friday|cyber monday|comparativa"
+    r"|rebajad[oa]s? (?:por|al|un|hasta|en)"
+    r"|(?:dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+) (?:m[oó]viles|productos|auriculares|port[aá]tiles"
+    r"|televisores|smartphones|gadgets|accesorios))\b", re.I)
+_INVISIBLE = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\ufeff]")
 _GENERIC_TYPES = {
     "pagina", "lista", "articulo", "anexo", "ano", "dia", "concepto", "termino", "proceso", "conjunto",
     "tipo", "forma", "parte", "nombre", "apellido", "palabra", "accion", "evento", "edicion",
@@ -91,7 +100,7 @@ def proper_mention(title: str, headline: str) -> bool:
     """Un tema de una sola palabra solo se explica con titulares que la usen como nombre propio:
     «Abascal responde…» sí; «la batería externa…» no habla del tema «Batería»."""
     significant = tokens(title or "")
-    if len(significant) != 1:
+    if len(significant) != 1 or (title and title.strip() in (headline or "")):
         return True
     target = significant[0]
     accented = strip_accents(title or "") != (title or "")
@@ -105,9 +114,11 @@ def proper_mention(title: str, headline: str) -> bool:
 
 def qualifies(topic: dict, headline: dict) -> bool:
     """¿Puede este titular explicar por qué el tema es tendencia?"""
+    title, text = topic.get("title") or "", clean_headline(headline.get("title") or "")
+    if _SHOPPING.search(text) and not _SHOPPING.search(title):
+        return False
     if headline.get("from_trend"):
         return True
-    title, text = topic.get("title") or "", clean_headline(headline.get("title") or "")
     return mentions(title, text) and proper_mention(title, text)
 
 
@@ -209,5 +220,5 @@ def explain(topic: dict, now: float = None) -> None:
 
 
 def _sentence_case(text: str) -> str:
-    text = (text or "").strip()
+    text = " ".join(_INVISIBLE.sub("", text or "").split())
     return text[:1].upper() + text[1:]
