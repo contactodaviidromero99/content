@@ -1,0 +1,55 @@
+name: Romero CRM
+
+on:
+  push:
+    branches: [main, claude/upbeat-carson-tq3p5m]
+    paths:
+      - "romero-crm/**"
+      - ".github/workflows/romero-crm.yml"
+  workflow_dispatch:
+    inputs:
+      fuentes:
+        description: "Fuentes a diagnosticar, separadas por espacios (vacío = todas)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    name: Pruebas (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    defaults:
+      run:
+        working-directory: romero-crm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+
+  fuentes-reales:
+    name: Diagnóstico con datos reales
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: romero-crm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Consultar cada fuente
+        env:
+          FUENTES: ${{ github.event.inputs.fuentes }}
+        run: python -u -m romero_crm.diagnose $FUENTES

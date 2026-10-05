@@ -171,8 +171,13 @@ def parse_search(data) -> list:
     return found
 
 
+def prepare_session(session) -> None:
+    session.cookies.set("SOCS", "CAI", domain=".youtube.com", path="/")
+
+
 def search(query: str, params: str = None) -> list:
     session = make_session()
+    prepare_session(session)
     params = params or search_params(sort=SORT_VIEWS, upload=UPLOAD_WEEK, kind=TYPE_VIDEO)
     body = {"context": {"client": CLIENT}, "query": query, "params": params}
     headers = {
