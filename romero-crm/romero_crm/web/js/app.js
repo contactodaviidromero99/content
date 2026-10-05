@@ -989,6 +989,7 @@ function buildBrief(topic, detail) {
 }
 
 function drawerHtml(topic, detail, loading) {
+  if (!topic.why && detail?.why) topic = { ...topic, why: detail.why };
   const stats = `
     <div class="d-stats">
       <div class="d-stat"><span>Calor</span><b>${topic.heat}</b></div>

@@ -7,14 +7,14 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import APP_NAME, APP_VERSION, analysis, explain
-from .net import APP_UA, make_session
+from .net import APP_UA, SourceError, make_session
 from .niches import NICHES, classify
 from .sources import efemerides, google_trends, news, wikipedia, x_trends, youtube
 from .sources.base import SOURCE_LABELS, SourceResult, failure
 
 CADENCE_MINUTES = {"wikipedia": 180, "google_week": 180, "efemerides": 720}
 EXPLAIN_TOP = 24
-TREND_NEWS_LIMIT = 10
+TREND_NEWS_LIMIT = 14
 DESCRIPTION_TTL = 24 * 3600
 TREND_NEWS_TTL = 45 * 60
 
@@ -195,7 +195,7 @@ class Engine:
         if self.demo_loader:
             return
         targets = [t for t in topics if not t["utility"]][:EXPLAIN_TOP]
-        for step in (self._add_descriptions, self._add_trend_news):
+        for step in (self._add_descriptions, self._add_headlines):
             try:
                 step(targets, now)
             except Exception:
@@ -208,7 +208,11 @@ class Engine:
         pending = [t["title"] for t in wanted
                    if now - (self._description_cache.get(t["title"]) or {}).get("at", 0) > DESCRIPTION_TTL]
         if pending:
-            found = wikipedia.lookup_titles(make_session(APP_UA), pending[:50])
+            try:
+                found = wikipedia.lookup_titles(make_session(APP_UA), pending[:50])
+            except SourceError:
+                time.sleep(4)
+                found = wikipedia.lookup_titles(make_session(APP_UA), pending[:50])
             for title, info in found.items():
                 self._description_cache[title] = dict(info, at=now)
             self._description_cache = {k: v for k, v in self._description_cache.items() if now - v.get("at", 0) < 7 * 86400}
@@ -226,17 +230,31 @@ class Engine:
                 if niches[0] != "otros":
                     topic["niches"], topic["niche"] = niches, niches[0]
 
-    def _add_trend_news(self, targets: list, now: float) -> None:
+    def _add_headlines(self, targets: list, now: float) -> None:
+        """Busca el titular que explica cada tema que aún no lo tiene: primero las noticias que Google
+        asocia a la tendencia y, si no hay, una búsqueda en Google Noticias de las últimas 48 h."""
         self._trend_news_cache = {k: v for k, v in self._trend_news_cache.items() if now - v["at"] < 2 * 3600}
-        need = [t for t in targets if not t.get("why") and (t.get("google") or {}).get("news_tokens")][:TREND_NEWS_LIMIT]
+
+        def wants_trend_news(topic):
+            return bool((topic.get("google") or {}).get("news_tokens")) and not any(
+                n.get("from_trend") for n in topic["news"].get("items") or [])
+
+        need = [t for t in targets if wants_trend_news(t) or (not t.get("why") and not t["title"].startswith("#"))]
+        need = need[:TREND_NEWS_LIMIT]
 
         def fetch(topic):
-            google = topic["google"]
-            cache_key = f"{google['id']}:{google.get('started_at') or 0}"
+            google = topic.get("google") or {}
+            cache_key = f"{topic['key']}:{google.get('started_at') or 0}"
             cached = self._trend_news_cache.get(cache_key)
             if cached and now - cached["at"] < TREND_NEWS_TTL:
                 return topic, cached["items"]
-            items = google_trends.fetch_news_by_tokens(google["news_tokens"][:3])
+            items = []
+            if wants_trend_news(topic):
+                items = [{"title": n["title"], "url": n["url"], "source": n["source"], "published": n.get("time"),
+                          "from_trend": True} for n in google_trends.fetch_news_by_tokens(google["news_tokens"][:3])]
+            if not items and not topic.get("why") and not topic["title"].startswith("#"):
+                items = [{"title": n["title"], "url": n["url"], "source": n["source"], "published": n.get("published"),
+                          "coverage": n.get("coverage") or 1} for n in news.search(topic["query"], limit=8)]
             self._trend_news_cache[cache_key] = {"at": now, "items": items}
             return topic, items
 
@@ -248,14 +266,25 @@ class Engine:
                     topic, items = future.result()
                 except Exception:
                     continue
-                extra = [{"title": n["title"], "url": n["url"], "source": n["source"], "published": n.get("time"),
-                          "from_trend": True} for n in items]
-                topic["news"]["items"] = analysis.dedupe_news(extra + topic["news"]["items"])[:10]
+                if not items:
+                    continue
+                topic["news"]["items"] = analysis.dedupe_news(items + topic["news"]["items"])[:10]
+                if topic["niche"] == "otros":
+                    headlines = [n["title"] for n in topic["news"]["items"] if explain.qualifies(topic, n)]
+                    niches = classify(topic["title"], topic.get("related") or [], headlines, None, topic.get("description") or "")
+                    if niches[0] != "otros":
+                        topic["niches"], topic["niche"] = niches, niches[0]
 
     @staticmethod
     def _youtube_context(topic: dict):
+        """Palabra que se añade a la búsqueda de YouTube para no confundir el tema con otro:
+        «Ángel Arroyo ciclista»; y «España» para palabras sueltas como «Elecciones» o «Votar»."""
         if topic.get("what") and not topic.get("what_subject"):
-            return explain.context_word(topic["what"])
+            word = explain.context_word(topic["what"])
+            if word:
+                return word
+        if not topic["title"].startswith("#") and not explain.looks_proper(topic):
+            return "España"
         return None
 
     def _refresh_youtube(self, topics: list, limit: int, force: bool) -> None:
@@ -397,7 +426,7 @@ class Engine:
         detail = {"key": topic_key, "news": list(topic["news"]["items"]), "youtube": None, "history": []}
         if self.demo_loader:
             demo = self.demo_loader("detail") or {}
-            detail["youtube"] = (demo.get("youtube") or {}).get(topic_key) or next(iter((demo.get("youtube") or {}).values()), None)
+            detail["youtube"] = (demo.get("youtube") or {}).get(topic_key)
             detail["history"] = self.storage.observations(topic_key, time.time() - 3 * 86400)
             return detail
 
@@ -428,6 +457,8 @@ class Engine:
                 detail["youtube"] = result
             except Exception as exc:
                 errors.append(f"YouTube: {exc}")
+        if not topic.get("why"):
+            detail["why"] = explain.pick_why(topic, detail["news"])
         detail["history"] = self.storage.observations(topic_key, time.time() - 3 * 86400)
         detail["errors"] = errors
         self._detail_cache[topic_key] = {"_at": time.time(), "data": detail}

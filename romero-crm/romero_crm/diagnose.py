@@ -289,7 +289,7 @@ def diag_pipeline() -> None:
         print(f"       cifras:   {topic.get('summary')!r}")
         if chip:
             print(f"       youtube:  {chip.get('label')} · {chip.get('count')} vídeos · máx {chip.get('top_views')}")
-    for item in ((state.get("platforms") or {}).get("youtube") or [])[:6]:
+    for item in ((state.get("platforms") or {}).get("youtube") or [])[:10]:
         print(f"   · youtube «{item.get('query')}» busca {item.get('search_url', '').split('search_query=')[-1].split('&')[0]!r}: "
               f"{[(v['title'][:60], v['views']) for v in (item.get('videos') or [])[:3]]}")
     linked = [t for t in topics if t.get("story")]

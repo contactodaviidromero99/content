@@ -429,6 +429,60 @@ class ExplainTests(unittest.TestCase):
         explain.explain(topic)
         self.assertIsNone(topic["why"])
 
+    def test_single_word_needs_a_headline_about_it(self):
+        now = time.time()
+        topic = {"title": "Batería", "niche": "tecnologia", "news": {"count": 1, "outlets": 1, "items": [
+            {"title": "Ya en Action la batería externa Philips de gran capacidad", "source": "Xataka", "published": now}]}}
+        explain.explain(topic, now)
+        self.assertIsNone(topic["why"])
+        topic["news"]["items"].append({"title": "Por qué todo el mundo busca hoy la batería", "source": "20Minutos",
+                                       "published": now, "from_trend": True})
+        explain.explain(topic, now)
+        self.assertEqual(topic["why"]["source"], "20Minutos")
+
+    def test_context_must_match_what_is_happening(self):
+        now = time.time()
+        topic = {"title": "Elecciones", "niche": "politica", "niches": ["politica"],
+                 "description": "proceso electoral presidencial en Brasil",
+                 "wikipedia": {"title": "Elecciones generales de Brasil de 2026", "views": 11000},
+                 "news": {"count": 1, "outlets": 1, "items": [
+                     {"title": "Cuándo son las próximas elecciones generales en España convocadas por Pedro Sánchez",
+                      "source": "ABC", "published": now, "from_trend": True}]}}
+        explain.explain(topic, now)
+        self.assertIn("Pedro Sánchez", topic["why"]["title"])
+        self.assertIsNone(topic["what"])
+        match = {"title": "Barcelona - Real Madrid femenino", "niche": "deportes", "niches": ["deportes"],
+                 "description": "futbolista española", "wikipedia": {"title": "Claudia Pina", "views": 5000},
+                 "news": {"count": 1, "outlets": 1, "items": [
+                     {"title": "Claudia Pina hace historia en el Clásico femenino", "source": "DAZN", "published": now,
+                      "from_trend": True}]}}
+        explain.explain(match, now)
+        self.assertEqual((match["what_subject"], match["what"]), ("Claudia Pina", "Futbolista española"))
+
+    def test_topics_without_headlines_get_one_from_google_news(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from romero_crm.config import Settings
+        from romero_crm.engine import Engine
+        from romero_crm.storage import Storage
+
+        now = time.time()
+        topic = {"key": "adamuz", "title": "Adamuz", "query": "Adamuz", "niche": "otros", "niches": ["otros"],
+                 "utility": False, "why": None, "x": {"rank": 10}, "news": {"count": 0, "outlets": 0, "items": []}}
+        found = [{"title": "Las víctimas de Adamuz llevan su reclamación a Europa", "url": "https://n.example/a",
+                  "source": "Onda Cero", "published": int(now), "coverage": 3}]
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "cache").mkdir()
+            engine = Engine(Settings(Path(tmp) / "settings.json"), Storage(Path(tmp)))
+            with mock.patch("romero_crm.sources.news.search", return_value=found) as search:
+                engine._add_headlines([topic], now)
+                engine._add_headlines([dict(topic, key="adamuz", news={"items": []})], now)
+        self.assertEqual(search.call_count, 1)
+        explain.explain(topic, now)
+        self.assertEqual(topic["why"]["source"], "Onda Cero")
+
     def test_wikipedia_lookup_follows_redirects(self):
         class FakeResponse:
             status_code = 200

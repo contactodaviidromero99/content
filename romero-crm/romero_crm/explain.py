@@ -87,6 +87,46 @@ def mentions(title: str, headline: str) -> bool:
     return bool(set(tokens(title)) & set(tokens(headline or "")))
 
 
+def proper_mention(title: str, headline: str) -> bool:
+    """Un tema de una sola palabra solo se explica con titulares que la usen como nombre propio:
+    «Abascal responde…» sí; «la batería externa…» no habla del tema «Batería»."""
+    significant = tokens(title or "")
+    if len(significant) != 1:
+        return True
+    target = significant[0]
+    accented = strip_accents(title or "") != (title or "")
+    for word in re.findall(_WORD, headline or ""):
+        if not word[:1].isupper():
+            continue
+        if norm(word) == target and (not accented or word.lower() in (title or "").lower()):
+            return True
+    return False
+
+
+def qualifies(topic: dict, headline: dict) -> bool:
+    """¿Puede este titular explicar por qué el tema es tendencia?"""
+    if headline.get("from_trend"):
+        return True
+    title, text = topic.get("title") or "", clean_headline(headline.get("title") or "")
+    return mentions(title, text) and proper_mention(title, text)
+
+
+def subject_fits(topic_title: str, subject: str, why_title: str) -> bool:
+    """El artículo de Wikipedia de otro nombre («Elecciones generales de Brasil de 2026» para el tema
+    «Elecciones») solo sirve de contexto si el titular del «qué pasa» habla de él."""
+    own = set(tokens(topic_title or ""))
+    base = re.sub(r"\s*\([^)]*\)\s*$", "", subject or "")
+    words = re.findall(_WORD, base)
+    proper = [norm(w) for i, w in enumerate(words) if i > 0 and w[:1].isupper() and not w.isdigit() and norm(w) not in own]
+    extra = [t for t in tokens(base) if t not in own and not t.isdigit()]
+    if not extra:
+        return True
+    found = set(tokens(why_title or ""))
+    if proper:
+        return all(p in found for p in proper)
+    return any(t in found for t in extra)
+
+
 def looks_proper(topic: dict) -> bool:
     significant = tokens(topic.get("title") or "")
     if len(significant) >= 2:
@@ -143,24 +183,27 @@ def summary_line(topic: dict) -> str:
     return " · ".join(parts[:3])
 
 
+def pick_why(topic: dict, headlines: list):
+    """El primer titular (ya ordenado por relevancia) que de verdad explica el tema."""
+    best = next((h for h in headlines if qualifies(topic, h)), None)
+    if not best:
+        return None
+    return {"title": clean_headline(best["title"]), "source": best.get("source"),
+            "published": best.get("published"), "url": best.get("url")}
+
+
 def explain(topic: dict, now: float = None) -> None:
     ranked = rank_headlines(topic, now)
     if ranked:
         topic["news"]["items"] = ranked
-    best = next((h for h in ranked if h.get("from_trend") or mentions(topic.get("title") or "", clean_headline(h.get("title") or ""))), None)
-    topic["why"] = {
-        "title": clean_headline(best["title"]),
-        "source": best.get("source"),
-        "published": best.get("published"),
-        "url": best.get("url"),
-    } if best else None
+    topic["why"] = pick_why(topic, ranked)
     topic["what"], topic["what_subject"] = None, None
-    wiki = topic.get("wikipedia")
+    title, wiki = topic.get("title") or "", topic.get("wikipedia")
     if topic.get("description") and wiki and not is_disambiguation(topic["description"]):
-        topic["what"] = _sentence_case(topic["description"])
-        if not same_entity(topic.get("title") or "", wiki.get("title") or ""):
-            topic["what_subject"] = wiki.get("title")
-    elif topic.get("extra_description"):
+        subject = None if same_entity(title, wiki.get("title") or "") else wiki.get("title")
+        if not subject or subject_fits(title, subject, (topic["why"] or {}).get("title")):
+            topic["what"], topic["what_subject"] = _sentence_case(topic["description"]), subject
+    if not topic["what"] and topic.get("extra_description"):
         topic["what"] = _sentence_case(topic["extra_description"])
     topic["summary"] = summary_line(topic)
 

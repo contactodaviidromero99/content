@@ -31,7 +31,7 @@ GOOGLE_24H = [
     ("huelga renfe", 50000, 200, 9.0, None, [19], ["huelga renfe octubre", "servicios mínimos renfe"], "peak",
      [("Huelga de Renfe: servicios mínimos y trenes afectados este lunes", "Diario nacional (demo)")]),
     ("la revuelta", 20000, 300, 1.5, None, [4], ["broncano", "la revuelta invitado hoy"], "explosive",
-     [("La Revuelta: los invitados de esta semana", "Revista de televisión (demo)")]),
+     [("Broncano estrena en La Revuelta su entrevista más esperada", "Revista de televisión (demo)")]),
     ("día mundial de los docentes", 20000, 400, 7.0, None, [9], ["día del docente", "5 de octubre"], "peak",
      [("Día Mundial de los Docentes: por qué se celebra el 5 de octubre", "Diario educativo (demo)")]),
     ("bonoloto", 50000, 200, 3.0, None, [11], ["bonoloto resultados", "comprobar bonoloto"], "peak", []),
@@ -101,7 +101,7 @@ NEWS = {
     "economia": [("El euríbor cierra septiembre: así quedan las hipotecas", "Diario económico (demo)", 9)],
     "tecnologia": [("Cómo comprobar si WhatsApp está caído y qué hacer mientras tanto", "Web tecnológica (demo)", 1)],
     "entretenimiento": [
-        ("La Revuelta: los invitados de esta semana", "Revista de televisión (demo)", 3),
+        ("Broncano estrena en La Revuelta su entrevista más esperada", "Revista de televisión (demo)", 3),
         ("Gran Hermano: así fue la última gala", "Revista de televisión (demo)", 12),
     ],
     "deportes": [
