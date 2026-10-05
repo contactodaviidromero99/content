@@ -1000,6 +1000,8 @@ function buildBrief(topic, detail) {
   const news = (detail?.news || topic.news?.items || []).slice(0, 5).map((n) => `- ${n.title}${n.source ? ` (${n.source})` : ''}`);
   if (news.length) lines.push('', 'POR QUÉ ES TENDENCIA (titulares):', ...news);
   if (topic.related?.length) lines.push('', `BÚSQUEDAS RELACIONADAS: ${topic.related.slice(0, 8).join(', ')}`);
+  if (topic.story) lines.push('', `FORMA PARTE DE LA HISTORIA: ${topic.story.title}`);
+  if (topic.angles?.length) lines.push('', `TAMBIÉN SON TENDENCIA, LIGADOS A ESTA HISTORIA: ${topic.angles.map((a) => a.title).join(', ')}`);
   const yt = detail?.youtube;
   if (yt) lines.push('', `COMPETENCIA EN YOUTUBE (última semana): ${yt.count >= 20 ? '20+' : yt.count} vídeos; el más visto, ${F.num(yt.top_views)} visualizaciones (${LEVEL_TEXT[yt.level] || yt.label}).`);
   lines.push('', 'Quiero un short narrativo (60-90 s) sobre este tema con mi estilo de guion. Propón 3 ángulos que NO sean los obvios, cada uno con un hook de una frase y una idea de cierre memorable. Distingue hechos verificados de interpretaciones.');

@@ -354,6 +354,29 @@ class AnalysisTests(unittest.TestCase):
         self.assertTrue(all("_headlines" not in t for t in topics.values()))
         self.assertLess(topics["Esperan"]["heat"], topics["29-N"]["heat"])
 
+    def test_story_link_prefers_the_most_specific_story(self):
+        from romero_crm.sources.base import SourceResult
+        demo = DemoData()
+        payload = google_trends.parse_batch_response(demo.google_payload([
+            ("elecciones", 200000, 1000, 5.0, None, [14], ["elecciones generales"], "rising", []),
+            ("elecciones brasil", 50000, 1000, 8.0, None, [14], ["lula"], "rising", []),
+        ]), "i0OFE")
+        headlines = [
+            "Elecciones en Brasil: Flávio Bolsonaro y Lula da Silva van a una segunda vuelta",
+            "Sánchez convoca elecciones generales",
+            "Las encuestas ante las elecciones del 29 de noviembre",
+            "Feijóo arranca la precampaña de las elecciones",
+        ]
+        results = {
+            "google": SourceResult(source="google", ok=True, items=google_trends.parse_trending(payload)),
+            "x": x_trends_result(["Silva"]),
+            "news": SourceResult(source="news", ok=True, items=[
+                {"title": h, "url": f"https://example.com/{i}", "source": "Demo", "section": "portada"} for i, h in enumerate(headlines)
+            ]),
+        }
+        topics = {t["title"]: t for t in analysis.build_topics(results, {}, time.time())}
+        self.assertEqual(topics["Silva"]["story"]["key"], "eleccionesbrasil")
+
     def test_no_false_merge_on_generic_city(self):
         demo = DemoData()
         results = {"google": demo.load("google"), "x": x_trends_result(["Madrid"])}

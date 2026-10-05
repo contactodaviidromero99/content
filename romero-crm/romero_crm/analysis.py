@@ -403,6 +403,7 @@ def link_stories(topics: list) -> None:
             "\n".join(norm(r) for r in (anchor["google"].get("related") or [])),
             "\n".join(_plain(h, False) for h in headlines),
             "\n".join(_plain(h, True) for h in headlines),
+            max(len(headlines), 1),
         ))
     for topic in topics:
         if topic.get("google") or topic["utility"]:
@@ -411,15 +412,17 @@ def link_stories(topics: list) -> None:
         exact = _plain(topic["title"], True)
         accented = exact != _plain(topic["title"], False)
         specific = bool(phrases) and (phrases[0] != norm(topic["title"]) or len(exact.replace(" ", "")) >= 5)
-        best, best_score = None, 0
-        for anchor, related_text, plain_text, accented_text in contexts:
+        best, best_rank = None, (0, 0.0)
+        for anchor, related_text, plain_text, accented_text, size in contexts:
             if accented:
-                score = _count_phrase(exact, accented_text) if phrases else 0
+                related_hits, headline_hits = 0, _count_phrase(exact, accented_text) if phrases else 0
             else:
-                score = sum(2 * min(1, _count_phrase(p, related_text)) + _count_phrase(p, plain_text) for p in phrases)
-            if score > best_score:
-                best, best_score = anchor, score
-        if best is None or best_score < (1 if specific else 2):
+                related_hits = sum(min(1, _count_phrase(p, related_text)) for p in phrases)
+                headline_hits = sum(_count_phrase(p, plain_text) for p in phrases)
+            rank = (2 * related_hits + headline_hits, headline_hits / size)
+            if rank > best_rank:
+                best, best_rank = anchor, rank
+        if best is None or best_rank[0] < (1 if specific else 2):
             continue
         topic["story"] = {"key": best["key"], "title": best["title"]}
         if topic["niche"] == "otros" and best["niche"] != "otros":
@@ -513,6 +516,9 @@ def _aggregate(members: list, now: float):
     }
 
 
+_TOPICAL_SECTIONS = ("deportes", "economia", "tecnologia", "entretenimiento", "ciencia", "salud", "internacional")
+
+
 def _attach_news(topic: dict, members: list, headlines: list) -> None:
     token_sets = topic.pop("_member_tokens")
     keys = topic.pop("_member_keys")
@@ -539,8 +545,12 @@ def _attach_news(topic: dict, members: list, headlines: list) -> None:
         base = topic["google"]["categories"][0]
     elif topic.get("tiktok") and topic["tiktok"].get("niche_hint"):
         base, prior = topic["tiktok"]["niche_hint"], 1.0
-    elif matched and matched[0].get("section") in ("deportes", "economia", "tecnologia", "entretenimiento", "ciencia", "salud", "internacional"):
-        base, prior = matched[0]["section"], 1.5
+    elif matched:
+        sections = Counter(m.get("section") for m in matched if m.get("section") in _TOPICAL_SECTIONS)
+        if sections:
+            section, votes = sections.most_common(1)[0]
+            if votes * 2 >= len(matched):
+                base, prior = section, 1.5
     niches = classify(topic["title"], topic.get("related") or [], headlines_text, base, topic.get("description") or "", prior=prior)
     topic["niches"] = niches
     topic["niche"] = niches[0]

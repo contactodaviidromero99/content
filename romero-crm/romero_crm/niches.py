@@ -73,6 +73,7 @@ KEYWORDS = {
         "papeleta", "voto por correo", "jornada electoral", "cortes generales", "disolucion de las cortes",
         "sanchismo", "sanchista", "sanxe", "perro sanxe", "alvise", "se acabo la fiesta", "fascismo",
         "antifascismo", "facha", "fachas", "ultraderecha", "extrema derecha", "comunismo", "precampana",
+        "election", "elections", "general election",
     ],
     "internacional": [
         "trump", "donald trump", "biden", "kamala harris", "putin", "zelenski", "ucrania", "rusia", "israel",
@@ -226,6 +227,7 @@ UTILITY_EXACT = {
     "gmail", "hotmail", "outlook", "google translate", "traductor google", "el periodico de catalunya",
     "ara", "vilaweb", "naiz", "deia", "el correo", "la voz de galicia", "faro de vigo", "levante emv",
     "las provincias", "diario de sevilla", "heraldo", "el norte de castilla", "diario sur", "ideal",
+    "rac1", "tv3", "3cat", "catalunya radio", "onda cero", "esradio", "canal sur", "telemadrid", "a punt",
 }
 
 DESCRIPTION_KEYWORDS = {
