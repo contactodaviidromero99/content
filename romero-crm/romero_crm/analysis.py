@@ -365,7 +365,6 @@ _MONTHS_BY_INITIAL = {
     "e": ("enero",), "f": ("febrero",), "m": ("marzo", "mayo"), "a": ("abril", "agosto"), "j": ("junio", "julio"),
     "s": ("septiembre",), "o": ("octubre",), "n": ("noviembre",), "d": ("diciembre",),
 }
-STORY_MIN_SCORE = 2
 MAX_ANGLES = 8
 
 
@@ -411,6 +410,7 @@ def link_stories(topics: list) -> None:
         phrases = story_phrases(topic["title"])
         exact = _plain(topic["title"], True)
         accented = exact != _plain(topic["title"], False)
+        specific = bool(phrases) and (phrases[0] != norm(topic["title"]) or len(exact.replace(" ", "")) >= 5)
         best, best_score = None, 0
         for anchor, related_text, plain_text, accented_text in contexts:
             if accented:
@@ -419,7 +419,7 @@ def link_stories(topics: list) -> None:
                 score = sum(2 * min(1, _count_phrase(p, related_text)) + _count_phrase(p, plain_text) for p in phrases)
             if score > best_score:
                 best, best_score = anchor, score
-        if best is None or best_score < STORY_MIN_SCORE:
+        if best is None or best_score < (1 if specific else 2):
             continue
         topic["story"] = {"key": best["key"], "title": best["title"]}
         if topic["niche"] == "otros" and best["niche"] != "otros":
@@ -608,6 +608,9 @@ def _score(topics: list, results: dict, lifecycle: dict, now: float) -> None:
 
         if topic["sources"] == ["x"] and not topic.get("story") and topic["niche"] == "otros":
             reach = [r * 0.8 for r in reach]
+        if google and not google.get("active"):
+            reach = [r * 0.75 for r in reach]
+            momentum = [min(m, 0.5) for m in momentum]
         platforms = len([s for s in topic["sources"] if s != "news"])
         breadth = min(1.0, (platforms - 1) / 3) + (0.15 if news_count else 0)
         elapsed = topic.get("elapsed_hours")

@@ -132,13 +132,17 @@ def build_items(day_data: dict, target: dt.date) -> list:
     return unique
 
 
-def fetch(cache_dir: Path, days: int = 30, today: dt.date = None) -> SourceResult:
+def fetch(cache_dir: Path, days: int = 30, today: dt.date = None, budget_s: float = 20.0) -> SourceResult:
     session = make_session(APP_UA, retry_rate_limit=False)
     today = today or dt.date.today()
-    all_days, errors = [], []
+    all_days, errors, partial = [], [], False
+    started = time.monotonic()
     for offset in range(days):
         target = today + dt.timedelta(days=offset)
         cached = _cache_path(cache_dir, target.month, target.day).exists()
+        if not cached and offset > 0 and time.monotonic() - started > budget_s:
+            partial = True
+            continue
         try:
             data = fetch_day(session, target.month, target.day, cache_dir)
             all_days.append({"date": target.isoformat(), "items": build_items(data, target)[:12]})
@@ -154,5 +158,5 @@ def fetch(cache_dir: Path, days: int = 30, today: dt.date = None) -> SourceResul
         source="efemerides",
         ok=True,
         items=all_days,
-        meta={"highlights": pick_highlights(all_days)[:40], "errors": errors[:3]},
+        meta={"highlights": pick_highlights(all_days)[:40], "errors": errors[:3], "partial": partial},
     )

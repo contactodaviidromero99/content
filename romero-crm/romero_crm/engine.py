@@ -68,6 +68,8 @@ class Engine:
         age = time.time() - (result.fetched_at or 0)
         if not result.ok and not (result.meta or {}).get("requires_login"):
             return age > 5 * 60
+        if result.ok and (result.meta or {}).get("partial"):
+            return age > 10 * 60
         return age > minutes * 60 - 30
 
     def refresh(self, force: bool = False, blocking: bool = True) -> None:

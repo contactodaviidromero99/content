@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import time
 import unittest
@@ -35,6 +36,13 @@ class TextTests(unittest.TestCase):
         self.assertEqual(recase("premio nobel de medicina", mapping), "Premio Nobel de Medicina")
         self.assertEqual(recase("whatsapp caído", mapping), "WhatsApp caído")
         self.assertEqual(recase("atlético - betis", {}), "Atlético - Betis")
+
+    def test_recase_recovers_accents_from_headlines(self):
+        mapping = casing_map(["Pedro Sánchez convoca elecciones", "El PP de Feijóo sube", "Muere Ángel Arroyo", "Sánchez disuelve las Cortes"])
+        self.assertEqual(recase("pedro sanchez", mapping), "Pedro Sánchez")
+        self.assertEqual(recase("feijoo", mapping), "Feijóo")
+        self.assertEqual(recase("angel arroyo", mapping), "Ángel Arroyo")
+        self.assertEqual(recase("psoe vox", mapping), "PSOE VOX")
 
 
 class NicheTests(unittest.TestCase):
@@ -191,7 +199,6 @@ class WikipediaTests(unittest.TestCase):
             {"project": "ca.wikipedia", "article": "Barcelona", "views_ceil": 3000, "rank": 3},
         ]}]}
         self.assertEqual([r["article"] for r in wikipedia.parse_top_per_country(noisy)], ["Barcelona"])
-        import datetime as dt
         prev = [{"project": "es.wikipedia", "article": "Batalla_de_Lepanto", "views": 1000, "rank": 9}]
         items = wikipedia.build_items([(dt.date(2026, 10, 4), rows), (dt.date(2026, 10, 3), prev)], {})
         self.assertEqual(items[0]["title"], "Batalla de Lepanto")
@@ -233,6 +240,28 @@ class YouTubeTests(unittest.TestCase):
 
 
 class EfemeridesTests(unittest.TestCase):
+    def test_time_budget_leaves_the_rest_for_later(self):
+        import tempfile
+        from pathlib import Path
+
+        calls = []
+
+        def fake_fetch_day(session, month, day, cache_dir):
+            calls.append((month, day))
+            return {"events": [{"year": 1926, "text": "Algo pasó en España.", "pages": []}]}
+
+        original = efemerides.fetch_day
+        efemerides.fetch_day = fake_fetch_day
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                result = efemerides.fetch(Path(tmp), days=10, today=dt.date(2026, 10, 5), budget_s=0)
+        finally:
+            efemerides.fetch_day = original
+        self.assertTrue(result.ok)
+        self.assertTrue(result.meta["partial"])
+        self.assertEqual(calls, [(10, 5)])
+        self.assertEqual(result.items[0]["items"][0]["years_ago"], 100)
+
     def test_round_levels(self):
         self.assertEqual(efemerides.round_level(100), 4)
         self.assertEqual(efemerides.round_level(250), 3)

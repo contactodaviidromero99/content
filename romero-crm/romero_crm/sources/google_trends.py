@@ -111,7 +111,7 @@ def parse_trending(payload) -> list:
             "started_at": _timestamp(at(3)),
             "ended_at": ended,
             "active": ended is None,
-            "related": [r for r in (at(9) or []) if isinstance(r, str)][:15],
+            "related": [r for r in (at(9) or []) if isinstance(r, str)][:40],
             "topics": topics,
             "categories": categories,
             "news_tokens": _news_tokens(at(11)),

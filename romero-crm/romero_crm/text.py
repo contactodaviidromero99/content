@@ -52,6 +52,11 @@ taylor kylian jude lamine novak jannik max lewis kim elon mark steve bill jeff s
 """.split())
 
 
+def _fold(word: str) -> str:
+    lower = word.lower()
+    return strip_accents(lower) if len(lower) >= 5 else lower
+
+
 def casing_map(texts) -> dict:
     counts = {}
     for text in texts:
@@ -59,13 +64,13 @@ def casing_map(texts) -> dict:
             word = match.group(0)
             if index == 0 or len(word) < 2:
                 continue
-            bucket = counts.setdefault(word.lower(), {})
+            bucket = counts.setdefault(_fold(word), {})
             bucket[word] = bucket.get(word, 0) + 1
     mapping = {}
-    for lower, forms in counts.items():
+    for folded, forms in counts.items():
         best = max(forms.items(), key=lambda kv: kv[1])[0]
-        if best != lower and forms.get(best, 0) >= forms.get(lower, 0):
-            mapping[lower] = best
+        if best != folded and forms.get(best, 0) >= forms.get(folded, 0):
+            mapping[folded] = best
     return mapping
 
 
@@ -81,7 +86,7 @@ def recase(text: str, mapping: dict) -> str:
             return BRANDS[base]
         if base in ACRONYMS:
             return word.upper()
-        return mapping.get(word.lower(), word)
+        return mapping.get(_fold(word), word)
 
     out = _WORD_RE.sub(fix, text)
     words = out.split(" ")

@@ -71,6 +71,8 @@ KEYWORDS = {
         "votar", "voto", "votos", "urnas", "pucherazo", "escrutinio", "sondeo", "sondeos", "campana electoral",
         "mitin", "adelanto electoral", "elecciones anticipadas", "elecciones generales", "candidato", "candidata",
         "papeleta", "voto por correo", "jornada electoral", "cortes generales", "disolucion de las cortes",
+        "sanchismo", "sanchista", "sanxe", "perro sanxe", "alvise", "se acabo la fiesta", "fascismo",
+        "antifascismo", "facha", "fachas", "ultraderecha", "extrema derecha", "comunismo", "precampana",
     ],
     "internacional": [
         "trump", "donald trump", "biden", "kamala harris", "putin", "zelenski", "ucrania", "rusia", "israel",
@@ -79,6 +81,7 @@ KEYWORDS = {
         "eeuu", "estados unidos", "casa blanca", "kremlin", "corea del norte", "kim jong", "taiwan", "siria",
         "libano", "palestina", "cisjordania", "marruecos", "argelia", "mexico", "argentina", "colombia", "brasil",
         "lula", "papa leon", "vaticano", "aranceles", "g7", "g20", "cumbre", "embajada", "guerra comercial",
+        "bolsonaro", "jair bolsonaro",
     ],
     "economia": [
         "ibex", "ibex 35", "bolsa", "euribor", "hipoteca", "hipotecas", "ipc", "inflacion", "pensiones",
@@ -87,7 +90,7 @@ KEYWORDS = {
         "gasolina", "diesel", "vivienda", "alquiler", "alquileres", "inditex", "amancio ortega", "santander",
         "bbva", "caixabank", "telefonica", "iberdrola", "repsol", "mercadona", "el corte ingles", "ere",
         "despidos", "empresa", "empresas", "economia", "pib", "deuda", "impuesto", "impuestos", "irpf", "iva",
-        "subsidio", "nomina", "paga extra", "black friday",
+        "subsidio", "nomina", "paga extra", "black friday", "indra",
     ],
     "entretenimiento": [
         "serie", "series", "pelicula", "peliculas", "estreno", "netflix", "hbo", "hbo max", "disney",
@@ -157,7 +160,7 @@ KEYWORDS = {
         "ola de calor", "calor", "frio", "ola de frio", "alerta roja", "alerta naranja", "aviso amarillo",
         "aviso naranja", "aviso rojo", "inundaciones", "inundacion", "incendio forestal", "incendios",
         "sequia", "terremoto", "seismo", "huracan", "borrasca", "granizo", "viento", "cambio climatico",
-        "el tiempo", "prevision", "temperaturas",
+        "el tiempo", "prevision", "temperaturas", "es alert", "riada", "desbordamiento",
     ],
     "motor": [
         "coche", "coches", "dgt", "carnet de conducir", "multa", "multas", "seat", "cupra", "renault",
@@ -245,6 +248,7 @@ DESCRIPTION_KEYWORDS = {
                  "revolucion", "revolution", "siglo", "century", "antigua", "ancient", "medieval", "historico",
                  "historical", "arqueologico", "archaeological", "genocidio", "holocausto", "dictador",
                  "dictator", "almirante", "navegante", "rey de", "reina de", "king of", "queen of", "santo",
+                 "santa", "religioso", "fraile", "monje", "beato", "obispo", "cardenal", "teologo", "mistico",
                  "escritor", "writer", "novelista", "poeta", "poet", "pintor", "painter", "filosofo",
                  "philosopher", "novela", "novel", "obra de teatro", "monumento", "catedral", "castillo"],
     "ciencia": ["cientifico", "scientist", "fisico", "physicist", "quimico", "chemist", "matematico",
