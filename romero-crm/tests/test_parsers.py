@@ -358,8 +358,9 @@ class AnalysisTests(unittest.TestCase):
         from romero_crm.sources.base import SourceResult
         demo = DemoData()
         payload = google_trends.parse_batch_response(demo.google_payload([
-            ("elecciones", 200000, 1000, 5.0, None, [14], ["elecciones generales"], "rising", []),
-            ("elecciones brasil", 50000, 1000, 8.0, None, [14], ["lula"], "rising", []),
+            ("elecciones", 200000, 1000, 5.0, None, [14],
+             ["elecciones generales", "lula da silva"] + [f"elecciones consulta {i}" for i in range(28)], "rising", []),
+            ("elecciones brasil", 50000, 1000, 8.0, None, [14], ["lula", "flavio bolsonaro"], "rising", []),
         ]), "i0OFE")
         headlines = [
             "Elecciones en Brasil: Flávio Bolsonaro y Lula da Silva van a una segunda vuelta",

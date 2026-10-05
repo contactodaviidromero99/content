@@ -398,12 +398,14 @@ def link_stories(topics: list) -> None:
     contexts = []
     for anchor in anchors:
         headlines = anchor.get("_headlines") or []
+        related = anchor["google"].get("related") or []
         contexts.append((
             anchor,
-            "\n".join(norm(r) for r in (anchor["google"].get("related") or [])),
+            "\n".join(norm(r) for r in related),
             "\n".join(_plain(h, False) for h in headlines),
             "\n".join(_plain(h, True) for h in headlines),
-            max(len(headlines), 1),
+            math.sqrt(max(len(related), 1)),
+            math.sqrt(max(len(headlines), 1)),
         ))
     for topic in topics:
         if topic.get("google") or topic["utility"]:
@@ -412,18 +414,21 @@ def link_stories(topics: list) -> None:
         exact = _plain(topic["title"], True)
         accented = exact != _plain(topic["title"], False)
         specific = bool(phrases) and (phrases[0] != norm(topic["title"]) or len(exact.replace(" ", "")) >= 5)
-        best, best_rank = None, (0, 0.0)
-        for anchor, related_text, plain_text, accented_text, size in contexts:
+        threshold = 1 if specific else 2
+        candidates = []
+        for anchor, related_text, plain_text, accented_text, related_size, headline_size in contexts:
             if accented:
                 related_hits, headline_hits = 0, _count_phrase(exact, accented_text) if phrases else 0
             else:
                 related_hits = sum(min(1, _count_phrase(p, related_text)) for p in phrases)
                 headline_hits = sum(_count_phrase(p, plain_text) for p in phrases)
-            rank = (2 * related_hits + headline_hits, headline_hits / size)
-            if rank > best_rank:
-                best, best_rank = anchor, rank
-        if best is None or best_rank[0] < (1 if specific else 2):
+            evidence = 2 * related_hits + headline_hits
+            if evidence >= threshold:
+                affinity = 2 * related_hits / related_size + headline_hits / headline_size
+                candidates.append((affinity, evidence, anchor))
+        if not candidates:
             continue
+        best = max(candidates, key=lambda c: (c[0], c[1]))[2]
         topic["story"] = {"key": best["key"], "title": best["title"]}
         if topic["niche"] == "otros" and best["niche"] != "otros":
             topic["niche"] = best["niche"]
