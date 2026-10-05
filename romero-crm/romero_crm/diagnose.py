@@ -76,6 +76,9 @@ def diag_google() -> None:
     if rows:
         show("longitud fila 0", len(rows[0]))
         snippet(json.dumps(rows[0], ensure_ascii=False), 900)
+    for index, row in enumerate(rows[:3]):
+        tail = row[9:] if isinstance(row, list) else []
+        show(f"fila {index} índices 9..", json.dumps(tail, ensure_ascii=False)[:500])
     items = google_trends.parse_trending(payload)
     show("tendencias", len(items))
     for item in items[:12]:
@@ -83,8 +86,40 @@ def diag_google() -> None:
               f"inicio={item['started_at']} cats={item['categories']} rel={item['related'][:3]} tokens={len(item['news_tokens'])}")
     active = [i for i in items if i["active"]]
     if active:
-        series = google_trends.fetch_timelines(session, [i["query"] for i in active[:3]])
-        show("series", {k: (len(v), v[-6:]) for k, v in series.items()})
+        keyword = active[0]["query"]
+        variants = {
+            "A trendspy": [None, None, [["ES", keyword, 3, 0, 3]]],
+            "B periodo 2": [None, None, [["ES", keyword, 2, 0, 3]]],
+            "C sin extras": [None, None, [["ES", keyword, 3]]],
+            "D anidado": [[["ES", keyword, 3, 0, 3]]],
+            "E con nulo": [None, None, [["ES", keyword, 3, 0, 3]], None],
+            "F hl": [None, None, [["ES", keyword, 3, 0, 3]], "es"],
+            "G periodo 4": [None, None, [["ES", keyword, 4, 0, 3]]],
+        }
+        for label, payload_variant in variants.items():
+            f_req_v = json.dumps([[["jpdkv", json.dumps(payload_variant), None, "generic"]]])
+            resp = session.post(google_trends.BATCH_URL, data={"f.req": f_req_v}, headers=google_trends._HEADERS, timeout=TIMEOUT)
+            body = re.sub(r"\s+", " ", resp.text)[:220]
+            show(f"jpdkv {label}", f"{resp.status_code} {body}")
+            time.sleep(0.4)
+        page = session.get("https://trends.google.com/trending", params={"geo": "ES", "hl": "es"}, timeout=TIMEOUT)
+        show("página trending", f"{page.status_code} {len(page.text)} bytes")
+        scripts = re.findall(r'<script[^>]+src="([^"]+)"', page.text)
+        show("scripts", scripts[:8])
+        for match in re.finditer(r"jpdkv", page.text):
+            snippet(page.text[max(0, match.start() - 200): match.start() + 300], 500)
+            break
+        for src in scripts[:6]:
+            url = src if src.startswith("http") else "https://trends.google.com" + src
+            try:
+                js = session.get(url, timeout=TIMEOUT).text
+            except Exception as exc:
+                show("js error", exc)
+                continue
+            hits = [m.start() for m in re.finditer("jpdkv", js)]
+            show(f"js {url[-60:]}", f"{len(js)} bytes, jpdkv x{len(hits)}")
+            for start in hits[:2]:
+                snippet(js[max(0, start - 400): start + 400], 800)
     tokens = next((i["news_tokens"] for i in items if i["news_tokens"]), None)
     if tokens:
         found = google_trends.fetch_news_by_tokens(tokens[:3])
@@ -126,6 +161,22 @@ def diag_x() -> None:
         show("enlaces /trend/", len(soup.select('a[href*="/trend/"]')))
         first = soup.select_one("ol.trend-card__list") or soup.select_one("ol") or soup.select_one("table")
         snippet(str(first)[:1500] if first else response.text[:1500], 1500)
+        if name == "getdaytrends":
+            rows = soup.select("table.trends tr")[:3]
+            for row in rows:
+                snippet(str(row), 1400)
+            polylines = []
+            for row in soup.select("table.trends tr")[:12]:
+                link = row.find("a")
+                points = [pl.get("points", "") for pl in row.find_all("polyline") if pl.get("points") and "grid" not in " ".join(pl.get("class") or [])]
+                polylines.append((link.get_text(strip=True) if link else "?", points))
+            show("polilíneas", polylines)
+            for match in list(re.finditer(r"(tweets|posts)", response.text, re.I))[:5]:
+                snippet(response.text[max(0, match.start() - 160): match.start() + 60], 220)
+            tables = soup.find_all("table")
+            show("tablas", [(" ".join(t.get("class") or []), len(t.find_all("tr"))) for t in tables])
+            for heading in soup.find_all(["h1", "h2", "h3", "h4"])[:12]:
+                show("encabezado", heading.get_text(" ", strip=True)[:80])
         cards = parser(response.text)
         show("bloques horarios", len(cards))
         if cards:
@@ -155,6 +206,35 @@ def diag_tiktok() -> None:
         show("longitud", len(response.text))
         soup = BeautifulSoup(response.text, "html.parser")
         show("título", soup.title.get_text(strip=True) if soup.title else None)
+        for blob_id in ("__MODERN_SSR_DATA__", "__MODERN_ROUTER_DATA__"):
+            node = soup.find("script", id=blob_id)
+            if node is None:
+                show(blob_id, "no")
+                continue
+            raw = node.string or node.get_text() or ""
+            show(blob_id, f"{len(raw)} caracteres")
+            try:
+                blob = json.loads(raw)
+                for path, size, keys in list_paths(blob)[:15]:
+                    print(f"   · {path} (n={size}) claves={keys}")
+                snippet(json.dumps(blob, ensure_ascii=False)[:1500], 1500)
+            except ValueError:
+                snippet(raw[:800], 800)
+        bundles = [src for src in re.findall(r'<script[^>]+src="([^"]+)"', response.text) if "/main." in src or "route" in src]
+        for src in bundles[:3]:
+            url = ("https:" + src) if src.startswith("//") else src
+            try:
+                js = session.get(url, timeout=TIMEOUT).text
+            except Exception as exc:
+                show("js error", exc)
+                continue
+            apis = sorted(set(re.findall(r'["\'`](/(?:creative_radar_api|api|tiktok_one|creative)[^"\'`\s]{3,120})["\'`]', js)))
+            trendish = [a for a in apis if re.search(r"trend|hashtag|music|sound|popular|creator", a, re.I)]
+            show(f"js {url[-48:]}", f"{len(js)} bytes, {len(apis)} rutas api, {len(trendish)} de tendencias")
+            for api in trendish[:40]:
+                print(f"     {api}")
+            hosts = sorted(set(re.findall(r"https://[a-z0-9.-]*tiktok[a-z0-9.-]*\.com", js)))
+            show("hosts", hosts[:15])
         data = tiktok.extract_next_data(response.text)
         show("__NEXT_DATA__", bool(data))
         if data:
@@ -186,7 +266,7 @@ def diag_tiktok() -> None:
 
 def diag_wikipedia() -> None:
     session = make_session(APP_UA)
-    day = dt.datetime.utcnow().date() - dt.timedelta(days=1)
+    day = dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)
     url = wikipedia.TOP_COUNTRY_URL.format(y=day.year, m=day.month, d=day.day)
     response = session.get(url, timeout=TIMEOUT)
     show("top-per-country status", response.status_code)

@@ -206,7 +206,21 @@ UTILITY_PATTERNS = [
     "cupon once", "once", "quiniela", "el gordo de la primitiva", "eurojackpot", "lototurf", "quinigol",
     "super once", "triplex", "eurodreams", "el tiempo", "tiempo manana", "calendario laboral",
     "resultados loteria", "horario", "donde ver", "a que hora", "cita previa", "traductor",
+    "feliz lunes", "feliz martes", "feliz miercoles", "feliz jueves", "feliz viernes", "feliz sabado",
+    "feliz domingo", "feliz finde", "feliz fin de semana", "buenos dias", "buenas noches", "buen lunes",
 ]
+
+UTILITY_EXACT = {
+    "el pais", "elpais", "el mundo", "elmundo", "abc", "cope", "cadena ser", "la vanguardia", "rtve",
+    "rtve play", "el confidencial", "okdiario", "ok diario", "eldiario", "eldiario es", "20 minutos",
+    "el espanol", "la razon", "publico", "el periodico", "marca", "as", "mundo deportivo", "sport",
+    "europa press", "noticias", "ultimas noticias", "ultima hora", "noticias de hoy", "tiempo", "meteo",
+    "telediario", "antena 3", "antena 3 noticias", "telecinco", "la sexta", "lasexta", "cuatro", "tve",
+    "la 1", "atresplayer", "mitele", "google", "youtube", "facebook", "instagram", "whatsapp web",
+    "gmail", "hotmail", "outlook", "google translate", "traductor google", "el periodico de catalunya",
+    "ara", "vilaweb", "naiz", "deia", "el correo", "la voz de galicia", "faro de vigo", "levante emv",
+    "las provincias", "diario de sevilla", "heraldo", "el norte de castilla", "diario sur", "ideal",
+}
 
 DESCRIPTION_KEYWORDS = {
     "deportes": ["futbolista", "football", "soccer", "club de futbol", "football club", "tenista", "tennis",
@@ -272,7 +286,8 @@ def keyword_scores(text: str, rules=None) -> dict:
 
 
 def is_utility(text: str) -> bool:
-    return bool(_UTILITY_RX.search(norm(text)))
+    normalized = norm(text)
+    return normalized in UTILITY_EXACT or bool(_UTILITY_RX.search(normalized))
 
 
 def _add(total: dict, scores: dict, weight: float) -> None:

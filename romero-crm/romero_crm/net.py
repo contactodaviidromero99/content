@@ -18,14 +18,14 @@ class SourceError(Exception):
     pass
 
 
-def make_session(user_agent: str = BROWSER_UA) -> requests.Session:
+def make_session(user_agent: str = BROWSER_UA, retry_rate_limit: bool = True) -> requests.Session:
     session = requests.Session()
     retry = Retry(
         total=2,
         connect=2,
         read=1,
         backoff_factor=1.5,
-        status_forcelist=(429, 500, 502, 503, 504),
+        status_forcelist=(429, 500, 502, 503, 504) if retry_rate_limit else (500, 502, 503, 504),
         allowed_methods=frozenset(["GET", "POST"]),
         respect_retry_after_header=False,
         raise_on_status=False,

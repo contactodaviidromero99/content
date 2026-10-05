@@ -39,7 +39,18 @@ def round_level(years: int) -> int:
 
 
 def is_highlight(item: dict) -> bool:
+    if item["kind"] in ("births", "deaths"):
+        return item["round_level"] >= 3 or (item["round_level"] >= 2 and item["spain"])
     return item["round_level"] >= 2 or (item["round_level"] >= 1 and item["spain"])
+
+
+def pick_highlights(days: list, per_day: int = 3) -> list:
+    chosen = []
+    for day in days:
+        candidates = sorted((i for i in day["items"] if is_highlight(i)), key=lambda i: -i["score"])
+        chosen.extend(candidates[:per_day])
+    chosen.sort(key=lambda i: (i["date"], -i["score"]))
+    return chosen
 
 
 def is_spanish(text: str) -> bool:
@@ -60,13 +71,19 @@ def fetch_day(session, month: int, day: int, cache_dir: Path) -> dict:
             pass
     last_error = None
     for template in URLS:
-        try:
-            response = check(session.get(template.format(m=month, d=day), timeout=TIMEOUT), "Wikipedia (efemérides)")
-            data = response.json()
-            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            return data
-        except Exception as exc:
-            last_error = exc
+        for attempt in range(2):
+            try:
+                response = session.get(template.format(m=month, d=day), timeout=TIMEOUT)
+                if response.status_code == 429 and attempt == 0:
+                    time.sleep(3)
+                    continue
+                check(response, "Wikipedia (efemérides)")
+                data = response.json()
+                path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                return data
+            except Exception as exc:
+                last_error = exc
+                break
     raise last_error or SourceError("Sin efemérides")
 
 
@@ -116,11 +133,12 @@ def build_items(day_data: dict, target: dt.date) -> list:
 
 
 def fetch(cache_dir: Path, days: int = 30, today: dt.date = None) -> SourceResult:
-    session = make_session(APP_UA)
+    session = make_session(APP_UA, retry_rate_limit=False)
     today = today or dt.date.today()
     all_days, errors = [], []
     for offset in range(days):
         target = today + dt.timedelta(days=offset)
+        cached = _cache_path(cache_dir, target.month, target.day).exists()
         try:
             data = fetch_day(session, target.month, target.day, cache_dir)
             all_days.append({"date": target.isoformat(), "items": build_items(data, target)[:12]})
@@ -128,11 +146,13 @@ def fetch(cache_dir: Path, days: int = 30, today: dt.date = None) -> SourceResul
             errors.append(f"{target.isoformat()}: {exc}")
             if offset == 0:
                 return failure("efemerides", exc)
-    highlights = [i for d in all_days for i in d["items"] if is_highlight(i)]
-    highlights.sort(key=lambda i: (i["date"], -i["score"]))
+            if "429" in str(exc):
+                break
+        if not cached:
+            time.sleep(0.4)
     return SourceResult(
         source="efemerides",
         ok=True,
         items=all_days,
-        meta={"highlights": highlights[:40], "errors": errors[:3]},
+        meta={"highlights": pick_highlights(all_days)[:40], "errors": errors[:3]},
     )

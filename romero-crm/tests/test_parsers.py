@@ -49,6 +49,12 @@ class NicheTests(unittest.TestCase):
         self.assertTrue(is_utility("resultados euromillones"))
         self.assertFalse(is_utility("batalla de lepanto"))
 
+    def test_navigational_searches_are_utility(self):
+        for title in ("Elpais", "El Mundo", "Abc", "Cadena Ser", "#FelizLunes"):
+            self.assertTrue(is_utility(title), title)
+        for title in ("Elecciones", "Últimas noticias de Gaza", "Real Madrid"):
+            self.assertFalse(is_utility(title), title)
+
 
 class GoogleTests(unittest.TestCase):
     def test_batch_roundtrip(self):
@@ -130,6 +136,12 @@ class WikipediaTests(unittest.TestCase):
         ]}]}
         rows = wikipedia.parse_top_per_country(payload)
         self.assertEqual([r["article"] for r in rows], ["Batalla_de_Lepanto"])
+        noisy = {"items": [{"articles": [
+            {"project": "fr.wikipedia", "article": "Cookie_(informatique)", "views_ceil": 198700, "rank": 1},
+            {"project": "en.wikipedia", "article": "HTTP_cookie", "views_ceil": 5000, "rank": 2},
+            {"project": "ca.wikipedia", "article": "Barcelona", "views_ceil": 3000, "rank": 3},
+        ]}]}
+        self.assertEqual([r["article"] for r in wikipedia.parse_top_per_country(noisy)], ["Barcelona"])
         import datetime as dt
         prev = [{"project": "es.wikipedia", "article": "Batalla_de_Lepanto", "views": 1000, "rank": 9}]
         items = wikipedia.build_items([(dt.date(2026, 10, 4), rows), (dt.date(2026, 10, 3), prev)], {})
@@ -195,6 +207,17 @@ class AnalysisTests(unittest.TestCase):
         for topic in topics:
             self.assertTrue(0 <= topic["heat"] <= 100)
             self.assertTrue(0 <= topic["potential"] <= 100)
+
+    def test_distinct_google_trends_never_merge_through_related_queries(self):
+        demo = DemoData()
+        payload = google_trends.parse_batch_response(demo.google_payload([
+            ("elecciones", 200000, 1000, 5.0, None, [14], ["elecciones brasil", "pedro sanchez"], "rising", []),
+            ("elecciones brasil", 50000, 1000, 8.0, None, [14], ["lula"], "rising", []),
+        ]), "i0OFE")
+        from romero_crm.sources.base import SourceResult
+        results = {"google": SourceResult(source="google", ok=True, items=google_trends.parse_trending(payload))}
+        topics = analysis.build_topics(results, {}, time.time())
+        self.assertEqual(sorted(t["key"] for t in topics), ["elecciones", "eleccionesbrasil"])
 
     def test_no_false_merge_on_generic_city(self):
         demo = DemoData()

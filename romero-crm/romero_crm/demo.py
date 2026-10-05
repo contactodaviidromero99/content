@@ -379,9 +379,7 @@ class DemoData:
                         "content_urls": {"desktop": {"page": f"https://es.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"}},
                     }]})
             all_days.append({"date": target.isoformat(), "items": efemerides.build_items(payload, target)[:12]})
-        highlights = [i for d in all_days for i in d["items"] if efemerides.is_highlight(i)]
-        highlights.sort(key=lambda i: (i["date"], -i["score"]))
-        return SourceResult(source="efemerides", ok=True, items=all_days, meta={"highlights": highlights})
+        return SourceResult(source="efemerides", ok=True, items=all_days, meta={"highlights": efemerides.pick_highlights(all_days)})
 
     def youtube_payload(self, videos) -> dict:
         contents = []

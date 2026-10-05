@@ -75,12 +75,12 @@ class _Entry:
 def _match(a: _Entry, b: _Entry) -> bool:
     if a.key and a.key == b.key:
         return True
+    if a.source == b.source:
+        return False
     if a.source == "google" and b.key in a.related:
         return True
     if b.source == "google" and a.key in b.related:
         return True
-    if a.source == b.source:
-        return False
     if a.tokens and b.tokens:
         small, big = (a.tokens, b.tokens) if len(a.tokens) <= len(b.tokens) else (b.tokens, a.tokens)
         if len(small) >= 2 and small <= big:
@@ -285,7 +285,8 @@ def build_topics(results: dict, lifecycle: dict, now: float = None) -> list:
     for index, entry in enumerate(entries):
         for related_key in entry.related:
             for other in by_key.get(related_key, []):
-                finder.union(index, other)
+                if entries[other].source != entry.source:
+                    finder.union(index, other)
     for i in range(len(entries)):
         for j in range(i + 1, len(entries)):
             if entries[i].source != entries[j].source and _match(entries[i], entries[j]):

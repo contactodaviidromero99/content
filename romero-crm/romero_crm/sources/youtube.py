@@ -13,7 +13,7 @@ from .base import SourceResult
 
 SEARCH_API = "https://www.youtube.com/youtubei/v1/search"
 RESULTS_URL = "https://www.youtube.com/results"
-CLIENT = {"clientName": "WEB", "clientVersion": "2.20260708.00.00", "hl": "en", "gl": "ES"}
+CLIENT = {"clientName": "WEB", "clientVersion": "2.20260708.00.00", "hl": "es", "gl": "ES"}
 _INITIAL_DATA_RE = re.compile(r"(?:var\s+ytInitialData|window\[\"ytInitialData\"\])\s*=\s*(\{.*?\});\s*</script>", re.S)
 
 SORT_VIEWS = 3
@@ -194,7 +194,7 @@ def search(query: str, params: str = None) -> list:
             return videos
     except Exception:
         pass
-    response = check(session.get(RESULTS_URL, params={"search_query": query, "sp": params, "hl": "en", "gl": "ES"}, timeout=TIMEOUT), "YouTube")
+    response = check(session.get(RESULTS_URL, params={"search_query": query, "sp": params, "hl": "es", "gl": "ES"}, timeout=TIMEOUT), "YouTube")
     match = _INITIAL_DATA_RE.search(response.text)
     if not match:
         raise SourceError("YouTube no devolvió resultados reconocibles.")

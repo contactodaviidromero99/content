@@ -16,10 +16,12 @@ _NAMESPACES = {
     "mediawiki", "modulo", "módulo", "module", "fitxer", "fitxategi", "viquipèdia", "wikiproyecto",
 }
 _MAIN_PAGES = {"main_page", "portada", "wikipedia:portada", "pàgina_principal", "azala", "portada_galega", "-"}
+PROJECTS = {"es.wikipedia", "ca.wikipedia", "gl.wikipedia", "eu.wikipedia", "ast.wikipedia", "en.wikipedia"}
+_NOISE = {"cookie_(informatique)", "http_cookie", "cookie_http", "cookie_(informática)", "galleta_informática", "xxx", "xnxx", "xvideos", "pornhub"}
 
 
 def is_article(title: str) -> bool:
-    if not title or title.lower() in _MAIN_PAGES:
+    if not title or title.lower() in _MAIN_PAGES or title.lower() in _NOISE:
         return False
     if ":" in title:
         prefix = title.split(":", 1)[0].lower()
@@ -36,7 +38,7 @@ def parse_top_per_country(payload: dict) -> list:
     for row in items[0].get("articles") or []:
         project = str(row.get("project", ""))
         article = str(row.get("article", ""))
-        if not project.endswith("wikipedia") or not is_article(article):
+        if project not in PROJECTS or not is_article(article):
             continue
         views = row.get("views_ceil", row.get("views"))
         out.append({"project": project, "article": article, "views": int(views or 0), "rank": row.get("rank")})
@@ -121,7 +123,7 @@ def build_items(days: list, descriptions: dict) -> list:
 
 def fetch(today: dt.date = None) -> SourceResult:
     session = make_session(APP_UA)
-    today = today or dt.datetime.utcnow().date()
+    today = today or dt.datetime.now(dt.timezone.utc).date()
     days = []
     try:
         for offset in range(1, DAYS + 4):
