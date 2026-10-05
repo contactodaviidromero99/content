@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="romero-token" content="{{TOKEN}}">
+  <title>Romero CRM</title>
+  <link rel="icon" href="/static/img/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#/radar" aria-label="Romero CRM, inicio">
+        <img src="/static/img/logo.svg" alt="" width="30" height="30">
+        <span class="brand-name">Romero <span>CRM</span></span>
+      </a>
+      <nav class="nav" id="nav" aria-label="Secciones"></nav>
+      <div class="sidebar-foot" id="sidebar-foot"></div>
+    </aside>
+    <main class="main">
+      <div class="demo-banner" id="demo-banner" hidden>Modo demostración: estás viendo datos de ejemplo, no tendencias reales.</div>
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 id="page-title">Radar</h1>
+          <p id="page-subtitle"></p>
+        </div>
+        <div class="topbar-actions">
+          <label class="search">
+            <span class="search-icon" data-icon="search"></span>
+            <input id="search" type="search" placeholder="Buscar tema…" autocomplete="off" spellcheck="false">
+          </label>
+          <button class="btn btn-ghost icon-btn" id="theme-toggle" type="button" title="Cambiar tema" aria-label="Cambiar tema"></button>
+          <button class="btn btn-primary" id="refresh" type="button"><span data-icon="refresh"></span><span class="label">Actualizar</span></button>
+        </div>
+      </header>
+      <div class="filters" id="filters"></div>
+      <section class="view" id="view" aria-live="polite"></section>
+    </main>
+  </div>
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" aria-hidden="true" tabindex="-1"></aside>
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  <div class="toast" id="toast" hidden></div>
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
