@@ -22,6 +22,7 @@ import requests
 from .net import TIMEOUT, SourceError, check, make_session
 from .planner import platform_of
 from .sources import youtube as yt_search
+from .text import parse_compact_number
 
 YT_FEED = "https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
 YT_TAB = "https://www.youtube.com/channel/{cid}/{tab}"
@@ -355,11 +356,15 @@ def views_of(url: str, session=None):
         if response.status_code >= 400:
             return None
         text = response.text
-        if platform == "youtube" and '"videoDetails"' in text:
-            at = text.index('"videoDetails"')
-            found = re.search(r'"viewCount":"(\d+)"', text[at:at + 30000])
-            if found:
-                return int(found.group(1))
+        if platform == "youtube":
+            if '"videoDetails"' in text:
+                at = text.index('"videoDetails"')
+                found = re.search(r'"viewCount":"(\d+)"', text[at:at + 30000])
+                if found and int(found.group(1)) > 0:
+                    return int(found.group(1))
+            shown = re.search(r'"(?:views|viewCount)":\{"simpleText":"([^"]+)"', text)
+            if shown and parse_compact_number(shown.group(1)):
+                return parse_compact_number(shown.group(1))
         for pattern in patterns:
             found = pattern.search(text)
             if found:

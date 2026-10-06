@@ -352,7 +352,7 @@ def diag_connections() -> None:
                     print(f"     · {video['title'][:60]!r} · {video['views']} vistas · {video['published']!r} · {video['url']}")
             items = connections.fetch_youtube(channel, session)
             show("  resultado", f"{len(items)} vídeos · con fecha {sum(1 for i in items if i['published_at'])} · "
-                                f"exacta {sum(1 for i in items if i['source'] == 'youtube')}")
+                                f"exacta {sum(1 for i in items if i['published_at'] and i['source'] == 'youtube')}")
             for item in items[:3]:
                 when = dt.datetime.fromtimestamp(item["published_at"]).isoformat() if item["published_at"] else None
                 print(f"     · {item['title'][:60]!r} · {item['views']} vistas · {when} ({item['source']}) · {item['url']}")

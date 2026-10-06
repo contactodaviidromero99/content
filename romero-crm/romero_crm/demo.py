@@ -53,7 +53,7 @@ GOOGLE_24H = [
     ("pedro sánchez", 50000, 400, 2.5, None, [14], ["sánchez elecciones", "comparecencia sánchez", "adelanto electoral"], "rising",
      [("Sánchez y Feijóo chocan en el Congreso por el calendario electoral", "Diario nacional (demo)"),
       ("Qué pasaría si se adelantan las elecciones generales: fechas y escenarios", "Diario político (demo)")]),
-    ("elecciones generales", 100000, 1000, 2.0, None, [14],
+    ("elecciones generales", 120000, 1000, 2.0, None, [14],
      ["cuándo son las elecciones generales", "encuesta elecciones generales", "coalición de izquierdas", "feijóo encuesta"], "explosive",
      [("Qué pasaría si se adelantan las elecciones generales: fechas y escenarios", "Diario político (demo)"),
       ("Sánchez y Feijóo chocan en el Congreso por el calendario electoral", "Diario nacional (demo)")]),
@@ -64,14 +64,15 @@ GOOGLE_24H = [
 ]
 
 X_TRENDS = [
-    ("WhatsApp", 95000, 1), ("#NobelMedicina", 18400, 2), ("#LaRevuelta", 12000, 1), ("Alcaraz", 22000, 4),
+    ("WhatsApp", 95000, 1), ("#NobelMedicina", 18400, 2), ("#EleccionesGenerales", 48000, 2), ("#LaRevuelta", 12000, 1),
+    ("Alcaraz", 22000, 4),
     ("GTA 6", 27000, 3), ("#HuelgaRenfe", 9800, 9), ("Lepanto", 3100, 1), ("AEMET", 7600, 5),
     ("#DiaMundialDeLosDocentes", 14500, 8), ("Mbappé", 41000, 22), ("Pedro Sánchez", 15700, 10), ("Broncano", 8000, 1),
     ("Zelenski", 9000, 9), ("#RealMadridVillarreal", 66000, 21), ("Vinicius", 30500, 21), ("Feijóo", 8800, 6),
     ("#GH", 11000, 14), ("Presupuestos", 6100, 5), ("Euribor", None, 4), ("Juan de Austria", 2100, 1),
     ("#LunesDeOtoño", 4300, 7), ("Halloween", 12500, 18), ("DANA", 5200, 8), ("Aitana", 7300, 13),
     ("Champions", 18800, 16), ("Rockstar", 6600, 3), ("Bernabéu", 9100, 20), ("Netflix", 5100, 12),
-    ("#EleccionesGenerales", 48000, 2), ("Coalición de izquierdas", 12500, 2), ("Trump", 21000, 5),
+    ("Coalición de izquierdas", 12500, 2), ("Trump", 21000, 5),
 ]
 
 WIKI_ARTICLES = [
@@ -99,6 +100,7 @@ WIKI_ARTICLES = [
 
 NEWS = {
     "portada": [
+        ("Sánchez y Feijóo chocan en el Congreso por el calendario electoral", "Diario de la mañana (demo)", 2),
         ("El Nobel de Medicina se anuncia hoy: qué se premia y cómo se elige", "Agencia (demo)", 2),
         ("WhatsApp sufre una caída que afecta a usuarios de varios países", "Diario digital (demo)", 1),
         ("Huelga de Renfe: servicios mínimos y trenes afectados este lunes", "Diario nacional (demo)", 6),

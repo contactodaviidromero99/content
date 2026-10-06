@@ -13,7 +13,7 @@ from .niches import NICHE_NAMES
 from .text import FIRST_NAMES, GENERIC_TOKENS, fmt_number, key, norm, strip_accents, tokens
 
 PORTADA_SIZE = 5
-MAX_TOPICS = 14
+MAX_TOPICS = 20
 PHASE_RANK = {"explosivo": 4, "subiendo": 3, "temprana": 2, "pico": 1, "enfriandose": 0}
 PHASE_BONUS = {"explosivo": 6, "subiendo": 4, "temprana": 2, "pico": 0, "enfriandose": -12}
 
@@ -455,20 +455,34 @@ def display_title(title: str) -> str:
     return clean or title
 
 
-_FULL_NAME = r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\s+{}(?![\wáéíóúñ])"
+_CAPITAL = r"[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+"
+_PARTICLES = r"(?:\s+(?:de|del|la|las|los|y))*"
 
 
 def unconfirmed(topic: dict) -> bool:
-    """Una tendencia de X de una sola palabra («Cortés», «Chari») sin respaldo de Google ni Wikipedia, que
-    solo un titular explica o que en cada titular es una persona distinta (Íñigo Cortés, Manuel Cortés…):
-    no sabemos de verdad de qué va."""
+    """Una tendencia de X de una sola palabra («Cortés», «Rubén», «Chari») sin respaldo de Google ni Wikipedia,
+    que solo un titular explica o que en cada titular es una persona distinta (Íñigo Cortés, Manuel Cortés…;
+    Rubén de la Barrera, Rubén Seca…): no sabemos de verdad de qué va."""
     if set(topic.get("sources") or []) - {"x", "news"} or len(tokens(topic["title"])) != 1 or topic["title"].startswith("#"):
         return False
     heads = [clean_headline(n.get("title") or "") for n in (topic.get("news") or {}).get("items") or [] if qualifies(topic, n)]
     if len(heads) < 2:
         return True
-    pattern = re.compile(_FULL_NAME.format(re.escape(topic["title"].strip())))
-    names = {m.group(1) for h in heads for m in pattern.finditer(h)}
+    word = topic["title"].strip()
+    plain = strip_accents(word).lower()
+    names = set()
+    for headline in heads:
+        for match in re.finditer(r"[\wÁÉÍÓÚÑáéíóúñ]+", headline):
+            if strip_accents(match.group(0)).lower() != plain:
+                continue
+            before = re.search(r"(" + _CAPITAL + r")\s+$", headline[:match.start()])
+            after = re.match(_PARTICLES + r"\s+(" + _CAPITAL + r")", headline[match.end():])
+            if before and match.start() - len(before.group(0)) > 0:
+                names.add("<" + before.group(1))
+            elif before and strip_accents(before.group(1)).lower() in FIRST_NAMES:
+                names.add("<" + before.group(1))
+            if after:
+                names.add(after.group(1) + ">")
     return len(names) >= 2
 
 
@@ -701,10 +715,10 @@ def _build(ordered: list, now: float, efemerides: list) -> dict:
     story["summary"] = summary(story)
     story["angle"] = angle(story, ordered, efemerides)
     story["alert"] = is_alert(story)
-    story["score"] = importance(story, len(ordered))
-    if unconfirmed(lead):
+    doubtful = unconfirmed(lead)
+    if doubtful:
         story["why"] = None
-        story["score"] = round(story["score"] - 8, 1)
+    story["score"] = importance(story, len(ordered)) - (8 if doubtful else 0)
     return story
 
 
