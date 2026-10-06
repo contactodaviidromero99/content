@@ -251,6 +251,50 @@ class ConnectionTests(unittest.TestCase):
         self.assertEqual(item["published_at"], int(dt.datetime(2026, 10, 6, 17, 30, tzinfo=dt.timezone.utc).timestamp()))
         self.assertEqual(connections.parse_youtube_feed("<html>no</html>"), [])
 
+    def test_youtube_falls_back_to_channel_tabs(self):
+        def page(renderers):
+            data = {"contents": {"twoColumnBrowseResultsRenderer": {"tabs": [{"tabRenderer": {"content": {
+                "richGridRenderer": {"contents": [{"richItemRenderer": {"content": r}} for r in renderers]}}}}]}}}
+            return f"<script>var ytInitialData = {json.dumps(data)};</script>"
+
+        videos = page([{"videoRenderer": {"videoId": "vidLargo001", "title": {"runs": [{"text": "Ruiz-Mateos, el ascenso"}]},
+                                          "viewCountText": {"simpleText": "12.345 visualizaciones"},
+                                          "publishedTimeText": {"simpleText": "hace 2 días"}}}])
+        shorts = page([{"shortsLockupViewModel": {
+            "onTap": {"innertubeCommand": {"reelWatchEndpoint": {"videoId": "vidCorto001"}}},
+            "overlayMetadata": {"primaryText": {"content": "Vietnam en 60 segundos"}, "secondaryText": {"content": "1,2 M visualizaciones"}}}}])
+
+        class Response:
+            def __init__(self, status, text=""):
+                self.status_code, self.text, self.ok = status, text, status < 400
+
+        class Session:
+            def get(self, url, params=None, timeout=None):
+                if "feeds/videos.xml" in url:
+                    return Response(404)
+                if url.endswith("/videos"):
+                    return Response(200, videos)
+                if url.endswith("/shorts"):
+                    return Response(200, shorts)
+                if "vidCorto001" in url:
+                    return Response(200, '<meta itemprop="datePublished" content="2026-10-05T18:00:00+02:00">')
+                return Response(500)
+
+        known = {"vidLargo001": 1790000000}
+        items = {i["vid"]: i for i in connections.fetch_youtube("UCabcdefghijklmnopqrstuv", Session(), known)}
+        self.assertEqual(items["vidLargo001"]["published_at"], 1790000000)
+        self.assertEqual(items["vidLargo001"]["views"], 12345)
+        short = items["vidCorto001"]
+        self.assertEqual(short["url"], "https://www.youtube.com/shorts/vidCorto001")
+        self.assertEqual(short["views"], 1200000)
+        self.assertEqual(short["source"], "youtube")
+        self.assertEqual(short["published_at"], int(dt.datetime(2026, 10, 5, 16, 0, tzinfo=dt.timezone.utc).timestamp()))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = Storage(Path(tmp))
+            storage.upsert_published([dict(short, published_at=1), dict(items["vidLargo001"], source=connections.APPROX)])
+            self.assertEqual(storage.published_dates("youtube"), {"vidCorto001": 1})
+
     def test_channel_input(self):
         self.assertEqual(connections.resolve_channel("UCabcdefghijklmnopqrstuv"), "UCabcdefghijklmnopqrstuv")
         self.assertEqual(connections.resolve_channel("https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv"), "UCabcdefghijklmnopqrstuv")
@@ -357,6 +401,20 @@ class AITests(unittest.TestCase):
         ai.anthropic = _FakeAnthropicModule(stop_reason="refusal")
         with self.assertRaises(ai.AIError):
             ai.request("sk-ant-test", [self.story()])
+
+    def test_engine_publishes_ideas_without_mutating_old_state(self):
+        ai.anthropic = _FakeAnthropicModule()
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = demo_engine(Path(tmp))
+            engine.settings.update({"ai_key": "sk-ant-test-key-123456"})
+            before = engine.get_state()["stories"]
+            key = engine.state["portada"]["keys"][0]
+            result = engine.ai_for_story(key)
+            self.assertEqual(result["ai"]["enfoque"], "Enfoque concreto.")
+            self.assertNotIn("ai", next(s for s in before if s["key"] == key))
+            after = next(s for s in engine.get_state()["stories"] if s["key"] == key)
+            self.assertEqual(after["ai"]["gancho"], "Gancho.")
+            self.assertTrue(engine.get_state()["ai"]["enabled"])
 
     def test_missing_sdk(self):
         ai.anthropic = None

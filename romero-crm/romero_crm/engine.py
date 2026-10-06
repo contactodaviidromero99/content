@@ -464,10 +464,19 @@ class Engine:
             self._ai_cache = ai.prune(self._ai_cache)
             self.storage.save_json("ai-cache.json", self._ai_cache)
             self.storage.save_json("ai-status.json", self.ai_status)
-            with self._lock:
-                ai.attach(self.state.get("stories", []), self._ai_cache)
-                self.revision += 1
+            self._publish_ai()
             self._ai_lock.release()
+
+    def _publish_ai(self) -> None:
+        """Pone las ideas en el estado sustituyendo las historias (no modificándolas en sitio), para no
+        tocar nada que otro hilo esté enviando a la interfaz en ese momento."""
+        with self._lock:
+            updated = []
+            for story in self.state.get("stories", []):
+                data = ai.cached(story, self._ai_cache)
+                updated.append(dict(story, ai=data) if data and story.get("ai") != data else story)
+            self.state = dict(self.state, stories=updated)
+            self.revision += 1
 
     def ai_for_story(self, key: str) -> dict:
         """Ideas de Claude para una historia concreta (desde su ficha). Espera a la respuesta."""
@@ -485,8 +494,7 @@ class Engine:
         self.storage.save_json("ai-cache.json", self._ai_cache)
         data = ai.cached(story, self._ai_cache)
         if data:
-            with self._lock:
-                story["ai"] = data
+            self._publish_ai()
         return {"ai": data} if data else {"error": "Claude no devolvió ideas para esta historia."}
 
     def agenda(self) -> dict:
@@ -536,7 +544,7 @@ class Engine:
                         channel_id = settings.get("youtube_channel_id") or connections.resolve_channel(settings["youtube_channel"])
                         if channel_id != settings.get("youtube_channel_id"):
                             self.settings.update({"youtube_channel_id": channel_id}, trusted=True)
-                        items = connections.fetch_youtube(channel_id)
+                        items = connections.fetch_youtube(channel_id, known=self.storage.published_dates("youtube"))
                         self.storage.upsert_published(items)
                         status["youtube"] = connections.status_line("youtube", items)
                     except Exception as exc:

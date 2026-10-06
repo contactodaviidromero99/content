@@ -286,6 +286,15 @@ class Storage:
             )
             self._db.commit()
 
+    def published_dates(self, platform: str) -> dict:
+        """Fechas exactas ya conocidas de tus vídeos (las aproximadas no cuentan: se vuelven a mirar)."""
+        with self._lock:
+            cur = self._db.execute(
+                "SELECT vid, published_at FROM published WHERE platform = ? AND published_at IS NOT NULL AND COALESCE(source, '') != ?",
+                (platform, "youtube-aprox"),
+            )
+            return {r["vid"]: r["published_at"] for r in cur.fetchall()}
+
     def published_between(self, since_ts: float, until_ts: float) -> list:
         with self._lock:
             cur = self._db.execute(

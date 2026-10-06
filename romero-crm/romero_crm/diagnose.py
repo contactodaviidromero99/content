@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
 import datetime as dt
+import gzip
 import json
+import os
 import re
 import sys
 import tempfile
@@ -19,6 +22,7 @@ from .sources import efemerides, google_trends, news, wikipedia, x_trends, youtu
 from .storage import Storage
 
 RESULTS = {}
+DUMP = {}
 
 
 def section(title: str) -> None:
@@ -262,6 +266,11 @@ def diag_pipeline() -> None:
         engine = Engine(Settings(root / "settings.json"), Storage(root))
         engine.refresh(force=True)
         state = engine.get_state()
+        efem = engine.results.get("efemerides")
+        DUMP["efemerides"] = [{"date": d["date"], "items": [_slim_efemeride(i) for i in d["items"]]}
+                              for d in (efem.items if efem and efem.ok else [])]
+    DUMP["now"] = state.get("generated_at")
+    DUMP["topics"] = [_slim_topic(t) for t in (state.get("topics") or []) if not t["utility"]][:170]
     show("error interno", state.get("last_error"))
     for source, info in state["sources"].items():
         print(f"   · {source:<12} ok={info['ok']} n={info['count']} modo={info['mode']} cuenta={info.get('requires_login')} "
@@ -330,13 +339,27 @@ def diag_connections() -> None:
     from . import connections
     session = make_session()
     session.cookies.set("SOCS", "CAI", domain=".youtube.com", path="/")
-    for handle in ("@YouTube", "@TEDx"):
+    for handle in ("@TEDx", "@rtve"):
         try:
             channel = connections.resolve_channel(handle, session)
+            feed = session.get(connections.YT_FEED.format(cid=channel), timeout=TIMEOUT)
+            show(f"youtube {handle}", f"canal {channel} · feed {feed.status_code} · {feed.text[:90]!r}")
+            for tab in ("videos", "shorts"):
+                page = session.get(connections.YT_TAB.format(cid=channel, tab=tab), params={"hl": "es", "gl": "ES"}, timeout=TIMEOUT)
+                found = connections.parse_channel_tab(page.text, shorts=tab == "shorts")
+                show(f"  pestaña {tab}", f"estado {page.status_code} · {len(found) if found is not None else 'sin ytInitialData'} vídeos")
+                for video in (found or [])[:3]:
+                    print(f"     · {video['title'][:60]!r} · {video['views']} vistas · {video['published']!r} · {video['url']}")
             items = connections.fetch_youtube(channel, session)
-            show(f"youtube {handle}", f"canal {channel} · {len(items)} vídeos")
+            show("  resultado", f"{len(items)} vídeos · con fecha {sum(1 for i in items if i['published_at'])} · "
+                                f"exacta {sum(1 for i in items if i['source'] == 'youtube')}")
             for item in items[:3]:
-                print(f"   · {item['title'][:70]!r} · {item['views']} vistas · {item['published_at']} · {item['url']}")
+                when = dt.datetime.fromtimestamp(item["published_at"]).isoformat() if item["published_at"] else None
+                print(f"     · {item['title'][:60]!r} · {item['views']} vistas · {when} ({item['source']}) · {item['url']}")
+            if items:
+                watch = session.get(connections.YT_WATCH.format(vid=items[0]["vid"]), timeout=TIMEOUT)
+                markers = [m for m in ("datePublished", "publishDate", "uploadDate", "viewCount", "interactionCount", "not a bot") if m in watch.text]
+                show("  página del vídeo", f"estado {watch.status_code} · longitud {len(watch.text)} · contiene {markers}")
         except Exception as exc:
             show(f"youtube {handle}", f"ERROR {exc}")
     for url in ("https://www.tiktok.com/@scout2015/video/6718335390845095173", "https://www.youtube.com/watch?v=jNQXAC9IVRw"):
@@ -357,6 +380,32 @@ CHECKS = {
 }
 
 
+def _slim_topic(topic: dict) -> dict:
+    out = {k: v for k, v in topic.items() if not k.startswith("_") and k not in ("series", "image", "metric", "volume_trend")}
+    news_block = dict(topic.get("news") or {})
+    news_block["items"] = [{k: n.get(k) for k in ("title", "source", "published", "url", "coverage", "from_trend", "section")}
+                           for n in news_block.get("items") or []]
+    out["news"] = news_block
+    if out.get("youtube"):
+        out["youtube"] = {k: v for k, v in out["youtube"].items() if k != "videos"}
+    return out
+
+
+def _slim_efemeride(item: dict) -> dict:
+    return {k: (item.get(k)[:240] if k == "text" and item.get(k) else item.get(k))
+            for k in ("date", "year", "years_ago", "round_level", "kind", "text", "title", "description", "url", "spain", "niche", "score")}
+
+
+def dump(payload: dict) -> None:
+    """Los temas y efemérides de este momento (gzip + base64 en líneas «DUMP»), para reproducir en local la
+    portada exacta que salió con datos reales y ajustar las reglas sobre ella."""
+    blob = base64.b64encode(gzip.compress(json.dumps(payload, ensure_ascii=False).encode("utf-8"), 9)).decode("ascii")
+    print("DUMP-BEGIN")
+    for start in range(0, len(blob), 3000):
+        print("DUMP " + blob[start:start + 3000])
+    print("DUMP-END", flush=True)
+
+
 def main(argv=None) -> None:
     requested = argv if argv is not None else sys.argv[1:]
     selected = [name for name in requested if name in CHECKS] or list(CHECKS)
@@ -367,6 +416,8 @@ def main(argv=None) -> None:
     section("RESUMEN")
     for name, outcome in RESULTS.items():
         print(f"  {name}: {outcome}")
+    if os.environ.get("ROMERO_DUMP") and DUMP.get("topics"):
+        dump(DUMP)
 
 
 if __name__ == "__main__":

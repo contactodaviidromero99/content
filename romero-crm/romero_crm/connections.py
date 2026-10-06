@@ -1,6 +1,7 @@
 """Tus vídeos publicados, para el calendario y el historial.
 
-- YouTube: el feed público de tu canal (sin cuentas ni claves).
+- YouTube: el feed público de tu canal (sin cuentas ni claves) y, si YouTube no lo sirve, las pestañas
+  «Vídeos» y «Shorts» del canal.
 - Instagram: la API oficial de Instagram con tu token (gratis; se configura una vez en Ajustes).
 - Enlaces sueltos (TikTok, YouTube, Instagram): al pegar el enlace de un vídeo publicado se rellenan su
   título y su miniatura con oEmbed y, cuando la página lo deja ver, sus visualizaciones.
@@ -10,15 +11,22 @@ sus vídeos entran pegando el enlace (o desde Metricool, si algún día se activ
 from __future__ import annotations
 
 import datetime as dt
+import json
 import re
 import time
 import xml.etree.ElementTree as ET
 from urllib.parse import quote, urlparse
 
+import requests
+
 from .net import TIMEOUT, SourceError, check, make_session
 from .planner import platform_of
+from .sources import youtube as yt_search
 
 YT_FEED = "https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
+YT_TAB = "https://www.youtube.com/channel/{cid}/{tab}"
+YT_WATCH = "https://www.youtube.com/watch?v={vid}"
+APPROX = "youtube-aprox"
 YT_OEMBED = "https://www.youtube.com/oembed?format=json&url={url}"
 TT_OEMBED = "https://www.tiktok.com/oembed?url={url}"
 IG_GRAPH = "https://graph.instagram.com"
@@ -114,10 +122,102 @@ def parse_youtube_feed(text: str) -> list:
     return items
 
 
-def fetch_youtube(channel_id: str, session=None) -> list:
+_WATCH_DATE = (
+    re.compile(r'<meta itemprop="datePublished" content="([^"]+)"'),
+    re.compile(r'"publishDate":"([^"]+)"'),
+    re.compile(r'<meta itemprop="uploadDate" content="([^"]+)"'),
+    re.compile(r'"uploadDate":"([^"]+)"'),
+)
+
+
+def fetch_youtube(channel_id: str, session=None, known: dict = None) -> list:
+    """Tus vídeos de YouTube. Primero el feed del canal (fechas y visualizaciones exactas); si YouTube no
+    lo sirve (a veces responde 404), las pestañas «Vídeos» y «Shorts» del canal."""
     session = session or _session()
-    response = check(session.get(YT_FEED.format(cid=channel_id), timeout=TIMEOUT), "YouTube (feed del canal)")
-    return parse_youtube_feed(response.text)
+    try:
+        response = session.get(YT_FEED.format(cid=channel_id), timeout=TIMEOUT)
+        if response.ok:
+            return parse_youtube_feed(response.text)
+        problem = f"error {response.status_code}"
+    except requests.RequestException as exc:
+        problem = exc.__class__.__name__
+    items = fetch_youtube_tabs(channel_id, session, known)
+    if items is None:
+        raise SourceError(f"YouTube no ha dejado leer tu canal (feed: {problem}; pestañas: sin respuesta).")
+    return items
+
+
+def parse_channel_tab(text: str, shorts: bool = False):
+    """Vídeos de una pestaña del canal (lo que YouTube pinta en la página). None si la página no se entiende."""
+    match = yt_search._INITIAL_DATA_RE.search(text or "")
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1))
+    except ValueError:
+        return None
+    videos = yt_search.parse_search(data)
+    for video in videos:
+        if shorts:
+            video["is_short"] = True
+            video["url"] = f"https://www.youtube.com/shorts/{video['id']}"
+    return videos
+
+
+def watch_date(vid: str, session) -> int:
+    """Fecha exacta de publicación de un vídeo, leída de su página."""
+    try:
+        response = session.get(YT_WATCH.format(vid=vid), timeout=TIMEOUT)
+    except requests.RequestException:
+        return None
+    if response.status_code >= 400:
+        return None
+    for pattern in _WATCH_DATE:
+        found = pattern.search(response.text)
+        if found and _iso_ts(found.group(1)):
+            return _iso_ts(found.group(1))
+    return None
+
+
+def fetch_youtube_tabs(channel_id: str, session, known: dict = None, per_tab: int = 15, lookups: int = 8):
+    """Las pestañas «Vídeos» y «Shorts». Las visualizaciones vienen en la página; la fecha exacta se lee
+    de cada vídeo nuevo (como mucho `lookups` por vez). Si no se consigue, queda la aproximada
+    («hace 2 días») marcada como tal, y se reintenta en la siguiente sincronización."""
+    known = known or {}
+    now = time.time()
+    videos, understood = [], False
+    for tab in ("videos", "shorts"):
+        try:
+            response = session.get(YT_TAB.format(cid=channel_id, tab=tab), params={"hl": "es", "gl": "ES"}, timeout=TIMEOUT)
+        except requests.RequestException:
+            continue
+        if response.status_code >= 400:
+            continue
+        found = parse_channel_tab(response.text, shorts=tab == "shorts")
+        if found is None:
+            continue
+        understood = True
+        videos.extend(found[:per_tab])
+    if not understood:
+        return None
+    items, seen = [], set()
+    for video in videos:
+        if video["id"] in seen:
+            continue
+        seen.add(video["id"])
+        published, source = known.get(video["id"]), "youtube"
+        if published is None and lookups > 0:
+            lookups -= 1
+            published = watch_date(video["id"], session)
+            time.sleep(0.3)
+        if published is None and video.get("age_seconds") is not None:
+            published, source = int(now - video["age_seconds"]), APPROX
+        items.append({
+            "platform": "youtube", "vid": video["id"], "url": video["url"], "title": video.get("title") or "",
+            "published_at": published, "views": video.get("views"), "likes": None, "comments": None, "shares": None,
+            "thumbnail": f"https://i.ytimg.com/vi/{video['id']}/hqdefault.jpg", "source": source,
+        })
+    return items
 
 
 # ---------- Instagram (API oficial) ----------
@@ -188,8 +288,12 @@ def refresh_instagram_token(token: str, session=None) -> str:
 
 # ---------- Enlaces sueltos ----------
 
-_TT_PLAYS = re.compile(r'"playCount":\s?(\d+)')
-_YT_VIEWS = re.compile(r'"viewCount":"(\d+)"')
+_TT_PLAYS = (re.compile(r'"playCount":\s?(\d+)'),)
+_YT_VIEWS = (
+    re.compile(r'"viewCount":"(\d+)"'),
+    re.compile(r'itemprop="interactionCount" content="(\d+)"'),
+    re.compile(r'"originalViewCount":"(\d+)"'),
+)
 
 
 def preview(url: str) -> dict:
@@ -211,18 +315,21 @@ def preview(url: str) -> dict:
 
 def views_of(url: str, session=None):
     platform = platform_of(url)
-    pattern = _TT_PLAYS if platform == "tiktok" else _YT_VIEWS if platform == "youtube" else None
-    if not pattern:
+    patterns = _TT_PLAYS if platform == "tiktok" else _YT_VIEWS if platform == "youtube" else ()
+    if not patterns:
         return None
     session = session or _session()
     try:
         response = session.get(url, timeout=TIMEOUT)
         if response.status_code >= 400:
             return None
-        found = pattern.search(response.text)
-        return int(found.group(1)) if found else None
+        for pattern in patterns:
+            found = pattern.search(response.text)
+            if found:
+                return int(found.group(1))
     except Exception:
         return None
+    return None
 
 
 def status_line(platform: str, items: list, error: str = None) -> dict:

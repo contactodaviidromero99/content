@@ -52,6 +52,7 @@ jobs:
       - name: Consultar cada fuente
         env:
           FUENTES: ${{ github.event.inputs.fuentes }}
+          ROMERO_DUMP: "1"
         run: python -u -m romero_crm.diagnose $FUENTES
 
   instalacion-mac:
@@ -75,6 +76,7 @@ jobs:
           git archive --format=zip --prefix=content-main/ HEAD -o "$RUNNER_TEMP/repo.zip"
           ROMERO_ZIP_URL="file://$RUNNER_TEMP/repo.zip" bash romero-crm/scripts/instalar.sh
       - name: Comprobar el icono de la aplicación (sin el pergamino de AppleScript)
+        timeout-minutes: 5
         run: |
           APP="$HOME/Applications/Romero Xandre CRM.app"
           test -d "$APP"
