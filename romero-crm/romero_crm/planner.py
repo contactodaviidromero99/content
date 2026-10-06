@@ -230,24 +230,71 @@ def auto_match(storage, days_back: int = 21) -> int:
     return matched
 
 
-def horizon(efem_result, today: dt.date = None, days: int = 21, limit: int = 8) -> list:
+ROUND_POINTS = {1: 0, 2: 8, 3: 18, 4: 28}
+# Un acontecimiento da más vídeo que un cumpleaños: «50 años del atentado de…» antes que «X cumpliría 50».
+KIND_POINTS = {"selected": 25, "events": 15, "deaths": 5, "births": -10}
+
+
+def worth_a_video(item: dict) -> bool:
+    """Aniversarios que merecen un vídeo: acontecimientos españoles con cifra redonda y nacimientos o muertes
+    españoles de 50 o 100 años; de fuera, solo acontecimientos de 50 o 100 años y personas centenarias."""
+    level = item.get("round_level", 0)
+    if not item.get("highlight", True) or level < 1:
+        return False
+    people = item.get("kind") in ("births", "deaths")
+    if item.get("spain"):
+        return level >= 3 if people else (level >= 2 or item.get("kind") == "selected")
+    return level >= 4 if people else level >= 3
+
+
+def efemeride_title(item: dict) -> str:
+    """Para personas, su nombre; para acontecimientos, el propio hecho (el título de la página sería
+    «Barbados» para el atentado contra el vuelo 455 de Cubana, y eso no dice nada)."""
+    if item.get("kind") in ("births", "deaths") and item.get("title"):
+        return item["title"]
+    text = (item.get("text") or "").strip().rstrip(".")
+    text = text[:1].upper() + text[1:]
+    if len(text) <= 80:
+        return text
+    cut = text[:78].rsplit(" ", 1)[0].rstrip(",;:")
+    return cut + "…"
+
+
+def horizon(efem_result, today: dt.date = None, days: int = 21, limit: int = 8, max_world: int = 2) -> list:
     """Lo que viene en las próximas semanas y merece un vídeo: festividades con historia y aniversarios
-    redondos (con prioridad para los españoles)."""
+    redondos. Primero lo español; de fuera, como mucho `max_world`, y solo lo más grande."""
     today = today or dt.date.today()
     end = today + dt.timedelta(days=days)
-    out = []
+    candidates = []
     for iso, items in festivities.for_range(today, end).items():
         for fest in items:
             if fest["idea"] or fest["kind"] in ("nacional", "aviso"):
-                out.append({"date": iso, "type": "fest", "title": fest["name"], "sub": fest["kind_label"],
-                            "idea": fest["idea"], "kind": fest["kind"], "spain": fest["spain"]})
+                points = 90 if fest["kind"] == "nacional" else 75 if fest["idea"] else 60
+                candidates.append((points, {"date": iso, "type": "fest", "title": fest["name"], "sub": fest["kind_label"],
+                                            "idea": fest["idea"], "kind": fest["kind"], "spain": fest["spain"]}))
     for iso, items in _efemerides_by_day(efem_result).items():
         if not today.isoformat() <= iso <= end.isoformat():
             continue
         for item in items:
-            if item["highlight"] and (item.get("round_level", 0) >= 3 or (item.get("spain") and item.get("round_level", 0) >= 1)):
-                out.append({"date": iso, "type": "efem", "title": item.get("title") or item["text"][:70], "sub": item["text"],
-                            "years": item["years_ago"], "spain": item.get("spain"), "url": item.get("url"),
-                            "reasons": efemeride_reasons(item)})
-    out.sort(key=lambda h: (h["date"], h["type"] != "fest"))
-    return out[:limit]
+            if not worth_a_video(item):
+                continue
+            points = ROUND_POINTS.get(item["round_level"], 0) + KIND_POINTS.get(item["kind"], 0) + (25 if item.get("spain") else 0)
+            candidates.append((points, {"date": iso, "type": "efem", "title": efemeride_title(item), "kind": item["kind"],
+                                        "sub": item["text"], "years": item["years_ago"], "spain": item.get("spain"),
+                                        "url": item.get("url"), "reasons": efemeride_reasons(item)}))
+    candidates.sort(key=lambda c: (-c[0], c[1]["date"]))
+    chosen, world, seen = [], 0, set()
+    for points, entry in candidates:
+        ident = (entry["date"], entry["title"])
+        if ident in seen:
+            continue
+        if entry["type"] == "efem" and not entry["spain"]:
+            if world >= max_world:
+                continue
+            world += 1
+        seen.add(ident)
+        chosen.append(dict(entry, points=points))
+        if len(chosen) >= limit:
+            break
+    chosen.sort(key=lambda h: (h["date"], h["type"] != "fest"))
+    return chosen

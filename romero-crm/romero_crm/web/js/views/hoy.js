@@ -60,11 +60,15 @@ function agendaPanel() {
 }
 
 function horizonPanel() {
-  const items = (ui.state?.horizon || []).slice(0, 5);
+  const all = ui.state?.horizon || [];
+  const best = new Set([...all].sort((a, b) => (b.points || 0) - (a.points || 0)).slice(0, 5));
+  const items = all.filter((h) => best.has(h));
   const rows = items.map((h) => {
     const date = F.parseIso(h.date);
+    const what = { births: 'de su nacimiento', deaths: 'de su muerte' }[h.kind] || '';
     const sub = h.type === 'efem'
-      ? `${h.years} años · ${esc(h.sub.length > 110 ? `${h.sub.slice(0, 108)}…` : h.sub)}`
+      ? (what ? `${h.years} años ${what} · ${esc(h.sub.length > 90 ? `${h.sub.slice(0, 88)}…` : h.sub)}`
+        : `Hace ${h.years} años${h.title.endsWith('…') ? ` · ${esc(h.sub.length > 110 ? `${h.sub.slice(0, 108)}…` : h.sub)}` : ''}`)
       : esc(h.sub);
     return `<div class="horizon-item" data-action="open-day" data-day="${esc(h.date)}" style="cursor:pointer">
       <div class="date-badge"><b>${date.getDate()}</b><span>${F.monthShort(date.getMonth())}</span></div>

@@ -339,7 +339,7 @@ def diag_connections() -> None:
     from . import connections
     session = make_session()
     session.cookies.set("SOCS", "CAI", domain=".youtube.com", path="/")
-    for handle in ("@TEDx", "@rtve"):
+    for handle in ("@TEDx", "@VisualPolitik"):
         try:
             channel = connections.resolve_channel(handle, session)
             feed = session.get(connections.YT_FEED.format(cid=channel), timeout=TIMEOUT)
@@ -360,6 +360,11 @@ def diag_connections() -> None:
                 watch = session.get(connections.YT_WATCH.format(vid=items[0]["vid"]), timeout=TIMEOUT)
                 markers = [m for m in ("datePublished", "publishDate", "uploadDate", "viewCount", "interactionCount", "not a bot") if m in watch.text]
                 show("  página del vídeo", f"estado {watch.status_code} · longitud {len(watch.text)} · contiene {markers}")
+                show("  fecha leída", connections.parse_watch_date(watch.text))
+                for marker in ("publishDate", "dateText", "viewCount"):
+                    at = watch.text.find(marker)
+                    if at >= 0:
+                        snippet(watch.text[max(0, at - 60): at + 140], 220)
         except Exception as exc:
             show(f"youtube {handle}", f"ERROR {exc}")
     for url in ("https://www.tiktok.com/@scout2015/video/6718335390845095173", "https://www.youtube.com/watch?v=jNQXAC9IVRw"):

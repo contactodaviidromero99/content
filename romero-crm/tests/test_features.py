@@ -27,6 +27,19 @@ def demo_engine(root: Path) -> Engine:
     return engine
 
 
+TOPIC_EXTRA = {"phase": "subiendo", "sources": ["x"], "phase_reason": "", "why": None, "related": []}
+
+
+def topic(key, title, niche, headlines, related=(), heat=50, trend=False):
+    return {"key": key, "title": title, "niche": niche, "niches": [niche], "heat": heat, "potential": 40,
+            "utility": False, "news": {"items": [{"title": h, "from_trend": trend} for h in headlines]},
+            "related": list(related)}
+
+
+def keys_of(groups):
+    return sorted(sorted(t["key"] for t in g) for g in groups)
+
+
 class StoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -73,18 +86,58 @@ class StoryTests(unittest.TestCase):
         self.assertTrue(any("WhatsApp CAÍDO hoy" in t for t in whatsapp["angle"]["tips"]))
 
     def test_unrelated_topics_stay_apart(self):
-        def topic(key, title, niche, headlines, related=()):
-            return {"key": key, "title": title, "niche": niche, "niches": [niche], "heat": 50, "potential": 40,
-                    "utility": False, "news": {"items": [{"title": h} for h in headlines]}, "related": list(related)}
         groups = stories.cluster([
-            topic("a", "Huelga de médicos", "salud", ["Los médicos van a la huelga el lunes"]),
+            topic("a", "Huelga de médicos", "salud", ["Los médicos van a la huelga el lunes"], trend=True),
             topic("b", "Alcaraz", "deportes", ["Alcaraz gana en Pekín"]),
-            topic("c", "Ministerio de Sanidad", "salud", ["Los médicos van a la huelga el lunes"]),
+            topic("c", "Ministerio de Sanidad", "salud", ["Los médicos van a la huelga el lunes"], trend=True),
         ])
-        self.assertEqual(sorted(sorted(t["key"] for t in g) for g in groups), [["a", "c"], ["b"]])
+        self.assertEqual(keys_of(groups), [["a", "c"], ["b"]])
+
+    def test_event_families_from_real_data(self):
+        # Caso real (6 de octubre de 2026): Sánchez convoca elecciones y a la vez son tendencia Abascal, Page,
+        # «PP y Vox» o el Frente Amplio sin decir «elecciones» en el título; y una huelga general aparte.
+        groups = stories.cluster([
+            topic("elec", "Elecciones generales España", "politica", [
+                "Pedro Sánchez anuncia la convocatoria de elecciones generales para el 29 de noviembre",
+                "Sánchez adelanta las elecciones al 29 de noviembre"], heat=60, trend=True),
+            topic("abascal", "Abascal", "politica", [
+                "Ayuso y Abascal azuzan la idea de un posible pucherazo ante el adelanto electoral"], heat=56),
+            topic("page", "Page", "politica", [
+                "Page ironiza sobre la posibilidad de que Sánchez saque un buen resultado el 29-N",
+                "Page celebra la convocatoria de elecciones y avisa: no renunciaré a mis ideas"], heat=54, trend=True),
+            topic("frente", "Frente Amplio", "politica", [
+                "Mónica García favorita como candidata del Frente Amplio",
+                "El 29N dinamita los calendarios de Frente Amplio"], heat=57, trend=True),
+            topic("huelga", "Huelga general", "economia", [
+                "UGT y CCOO convocan una huelga general por la crisis de la vivienda",
+                "El Sindicato de Inquilinas prepara una huelga general tras el anuncio de elecciones anticipadas el 29N"],
+                heat=40, trend=True),
+            topic("brasil", "Elecciones generales de Brasil de 2026", "politica", [
+                "Bolsonaro vence a Lula en primera vuelta de las elecciones en Brasil",
+                "Elecciones en Brasil: Bolsonaro y Lula en segunda vuelta"], heat=58, trend=True),
+            topic("cortes", "Cortés", "politica", [
+                "Íñigo Cortés, entrenador del Ribadesella: soy cántabro",
+                "¿Es constitucional aprobar los decretos de vivienda tras la disolución de las Cortes?"], heat=58),
+        ])
+        self.assertEqual(keys_of(groups), [["abascal", "elec", "frente", "page"], ["brasil"], ["cortes"], ["huelga"]])
+        self.assertTrue(stories.unconfirmed(topic("cortes", "Cortés", "politica", [
+            "Íñigo Cortés, entrenador del Ribadesella", "Manuel Cortés anuncia una oficina de la Policía Local"])))
+
+    def test_lead_is_what_the_others_talk_about(self):
+        film = topic("film", "La bola negra (película)", "entretenimiento", [], heat=47)
+        actor = topic("actor", "Miguel Bernardeau", "entretenimiento", [
+            "Miguel Bernardeau, protagonista de 'La bola negra', invitado en 'Al cielo con ella'",
+            "De su romance con Aitana al aplauso de la crítica por La bola negra"], heat=61)
+        groups = stories.cluster([film, actor])
+        self.assertEqual(keys_of(groups), [["actor", "film"]])
+        story = stories.build_stories([dict(film, **TOPIC_EXTRA), dict(actor, **TOPIC_EXTRA)])[0]
+        self.assertEqual(story["title"], "La bola negra")
+        self.assertEqual(story["heat"], 61)
 
     def test_person_names_count_surname_as_weak_evidence(self):
-        self.assertEqual(stories.title_phrases("Pedro Sánchez"), [("pedro sanchez", True), ("sanchez", False)])
+        self.assertEqual(stories.title_phrases("Pedro Sánchez"), [("pedro sanchez", True)])
+        self.assertEqual(stories.title_phrases("José Luis Ozores"), [("jose luis ozores", True), ("ozores", False)])
+        self.assertEqual(stories.title_phrases("La bola negra taquilla"), [("la bola negra taquilla", True), ("la bola negra", True)])
         self.assertEqual(stories.title_phrases("Elecciones"), [])
 
     def test_alert_needs_everything_at_once(self):

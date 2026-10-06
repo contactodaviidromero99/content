@@ -13,7 +13,7 @@ from .niches import NICHE_NAMES
 from .text import FIRST_NAMES, GENERIC_TOKENS, fmt_number, key, norm, strip_accents, tokens
 
 PORTADA_SIZE = 5
-MAX_TOPICS = 7
+MAX_TOPICS = 14
 PHASE_RANK = {"explosivo": 4, "subiendo": 3, "temprana": 2, "pico": 1, "enfriandose": 0}
 PHASE_BONUS = {"explosivo": 6, "subiendo": 4, "temprana": 2, "pico": 0, "enfriandose": -12}
 
@@ -55,6 +55,32 @@ _WORLD = [
     "cuba", "chile", "peru", "ecuador", "bolivia", "canada", "australia", "polonia", "hungria", "grecia",
     "portugal", "suecia", "noruega", "finlandia", "dinamarca", "groenlandia", "panama",
 ]
+# Gentilicios en las descripciones de Wikipedia («ciclista español», «actor estadounidense»).
+_SPANISH_DEMONYM = re.compile(r"(?<![a-z])(?:espanol|espanola|espanoles|espanolas)(?![a-z])")
+_FOREIGN_DEMONYMS = [
+    "estadounidense", "britanico", "britanica", "ingles", "inglesa", "escoces", "escocesa", "irlandes", "irlandesa",
+    "frances", "francesa", "aleman", "alemana", "italiano", "italiana", "portugues", "portuguesa", "neerlandes",
+    "neerlandesa", "belga", "suizo", "suiza", "austriaco", "austriaca", "sueco", "sueca", "noruego", "noruega",
+    "danes", "danesa", "finlandes", "finlandesa", "polaco", "polaca", "griego", "griega", "ruso", "rusa", "ucraniano",
+    "ucraniana", "checo", "checa", "hungaro", "hungara", "rumano", "rumana", "serbio", "serbia", "croata", "turco",
+    "turca", "israeli", "palestino", "palestina", "irani", "marroqui", "argelino", "argelina", "egipcio", "egipcia",
+    "sudafricano", "sudafricana", "nigeriano", "nigeriana", "mexicano", "mexicana", "argentino", "argentina",
+    "colombiano", "colombiana", "chileno", "chilena", "peruano", "peruana", "venezolano", "venezolana", "cubano",
+    "cubana", "uruguayo", "uruguaya", "paraguayo", "paraguaya", "boliviano", "boliviana", "ecuatoriano", "ecuatoriana",
+    "dominicano", "dominicana", "puertorriqueno", "puertorriquena", "hondureno", "hondurena", "salvadoreno",
+    "salvadorena", "guatemalteco", "guatemalteca", "nicaraguense", "costarricense", "panameno", "panamena",
+    "brasileno", "brasilena", "canadiense", "australiano", "australiana", "neozelandes", "neozelandesa", "japones",
+    "japonesa", "chino", "china", "coreano", "coreana", "surcoreano", "surcoreana", "indio", "india", "pakistani",
+    "filipino", "filipina", "tailandes", "tailandesa", "vietnamita", "indonesio", "indonesia",
+]
+# Palabras que delatan un titular en inglés (en uno en español casi nunca aparecen dos).
+_ENGLISH_WORDS = {
+    "the", "of", "and", "to", "in", "is", "for", "on", "with", "at", "by", "his", "her", "after", "about", "from",
+    "as", "an", "this", "that", "are", "was", "has", "have", "its", "their", "who", "how", "why", "what", "says",
+    "back", "over", "into", "will", "be", "it", "i", "he", "she", "they", "you", "we", "not", "dont", "t",
+}
+_SPANISH_WORDS = {"el", "la", "los", "las", "del", "que", "y", "por", "con", "para", "una", "se", "su", "sus", "al", "es"}
+
 _ROUTINE_TV = [
     "gran hermano", "la revuelta", "el hormiguero", "pasapalabra", "masterchef", "supervivientes", "first dates",
     "la isla de las tentaciones", "operacion triunfo", "tu cara me suena", "la voz", "suenos de libertad",
@@ -91,20 +117,109 @@ def _compile(phrases):
 _SPAIN_RX = _compile(_SPAIN)
 _WORLD_RX = _compile(_WORLD)
 _ROUTINE_RX = _compile(_ROUTINE_TV)
+_FOREIGN_RX = _compile(_FOREIGN_DEMONYMS)
 
 
 def _phrase_rx(phrase: str):
     return re.compile(r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])")
 
 
+def _accented_rx(phrase: str):
+    return re.compile(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)")
+
+
+# Familias de acontecimientos. Con ellas se sabe que «Abascal» (cuyo titular habla del «adelanto
+# electoral») es parte de las elecciones aunque no diga «elecciones», y que una huelga general no es
+# parte de las elecciones aunque se convoque en plena campaña: son dos historias.
+FAMILIES = {
+    "elecciones": (
+        {"elecciones", "electoral", "electorales", "comicios", "votacion", "votaciones", "voto", "votos", "encuesta",
+         "encuestas", "sondeo", "sondeos", "candidato", "candidata", "candidatura", "primarias", "investidura",
+         "escrutinio", "papeletas", "coalicion", "pacto", "mocion", "debate"},
+        ["elecciones", "electoral", "electorales", "comicios", "urnas", "campana", "precampana", "candidato",
+         "candidata", "candidatos", "candidatas", "candidatura", "candidaturas", "encuesta", "encuestas", "sondeo",
+         "sondeos", "votos", "votantes", "votar", "voto", "papeletas", "mitin", "escanos", "primarias",
+         "cabeza de lista", "cis", "adelanto electoral", "convocatoria electoral", "disolucion de las cortes",
+         "investidura", "formar gobierno", "primera vuelta", "segunda vuelta", "1 a vuelta", "2 a vuelta", "balotaje",
+         "presidenciales", "legislativas", "municipales", "autonomicas"],
+    ),
+    "huelga": (
+        {"huelga", "huelgas", "paro", "paros", "manifestacion", "manifestaciones", "protesta", "protestas",
+         "movilizacion", "movilizaciones"},
+        ["huelga", "huelgas", "paro general", "servicios minimos", "sindicatos", "piquetes", "manifestacion",
+         "manifestantes", "movilizacion", "movilizaciones", "protesta", "protestas", "ugt", "ccoo", "cc oo"],
+    ),
+    "temporal": (
+        {"dana", "temporal", "borrasca", "tormenta", "tormentas", "inundaciones", "inundacion", "lluvias", "granizo",
+         "nevada", "nevadas", "huracan", "tornado", "ciclon", "gota"},
+        ["dana", "temporal", "borrasca", "tormenta", "tormentas", "inundaciones", "lluvias", "aemet", "alerta roja",
+         "alerta naranja", "aviso rojo", "granizo", "nevada", "huracan", "tornado", "rachas", "torrenciales", "riadas"],
+    ),
+    "incendio": (
+        {"incendio", "incendios"},
+        ["incendio", "incendios", "hectareas", "forestal", "bomberos", "llamas", "desalojados", "evacuados"],
+    ),
+    "terremoto": (
+        {"terremoto", "terremotos", "sismo", "tsunami"},
+        ["terremoto", "sismo", "magnitud", "richter", "tsunami", "replicas", "epicentro"],
+    ),
+    "volcan": ({"erupcion", "volcan"}, ["erupcion", "volcan", "lava", "colada"]),
+    "apagon": ({"apagon"}, ["apagon", "sin luz", "red electrica", "suministro electrico"]),
+    "justicia": (
+        {"juicio", "sentencia", "condena", "caso", "detencion", "detenido", "detenida", "imputado", "imputada",
+         "investigado", "querella"},
+        ["juicio", "juez", "jueza", "juzgado", "tribunal", "fiscal", "fiscalia", "sentencia", "condena", "condenado",
+         "condenada", "absuelto", "absuelta", "imputado", "imputada", "investigado", "investigada", "declaracion",
+         "querella", "audiencia nacional", "supremo", "prision", "detenido", "detenida", "detencion", "uco"],
+    ),
+    "premios": (
+        {"premio", "premios", "gala", "goya", "goyas", "oscar", "oscars", "nobel", "grammy", "grammys", "emmy",
+         "emmys", "eurovision", "balon"},
+        ["premio", "premios", "gala", "nominados", "nominada", "nominado", "nominaciones", "ganador", "ganadora",
+         "galardon", "galardonado", "galardonada", "alfombra roja", "estatuilla"],
+    ),
+}
+_FAMILY_OF = {word: name for name, (words, _) in FAMILIES.items() for word in words}
+# Nichos que se solapan: unas elecciones en Brasil son «política» en Wikipedia e «internacional» en X.
+_AFFINITY = [{"politica", "internacional", "actualidad", "economia"}, {"entretenimiento", "musica", "estilo"},
+             {"ciencia", "tecnologia", "salud"}, {"clima", "actualidad"}, {"historia", "entretenimiento"}]
+_FAMILY_RX = {name: _compile(terms) for name, (_, terms) in FAMILIES.items()}
+# «29-N», «23J», «28M»: así se nombran en España las citas con las urnas.
+_ELECTION_DATE = re.compile(r"(?<![a-z0-9])\d{1,2} [jfmnsd](?![a-z0-9])")
+
+# Apellidos muy frecuentes: que dos personas se apelliden García no dice nada. Uno raro (Ozores) sí.
+COMMON_SURNAMES = set("""
+garcia rodriguez gonzalez fernandez lopez martinez sanchez perez gomez martin jimenez ruiz hernandez diaz moreno
+munoz alvarez romero alonso gutierrez navarro torres dominguez vazquez ramos gil ramirez serrano blanco molina
+morales suarez ortega delgado castro ortiz rubio marin sanz nunez iglesias medina garrido cortes castillo santos
+lozano guerrero cano prieto mendez cruz calvo gallego vidal leon marquez herrera pena flores cabrera campos vega
+fuentes carrasco diez caballero reyes nieto aguilar pascual santana herrero lorenzo montero hidalgo gimenez ibanez
+ferrer duran santiago benitez mora vicente vargas arias carmona crespo roman pastor soto saez velasco moya soler
+parra esteban bravo gallardo rojas silva smith johnson williams brown jones miller davis wilson
+""".split())
+
+# Lo que se añade a una búsqueda pero no cambia de qué habla: «La bola negra taquilla» es «La bola negra».
+_QUERY_TAIL = re.compile(
+    r"\s+(?:taquilla|ultima hora|hoy|en directo|directo|resultado|resultados|horario|donde ver|trailer|reparto|"
+    r"estreno|critica|precio|entradas|en vivo|online|gratis|espana|20[2-3]\d)$")
+
+
 def title_phrases(title: str) -> list:
-    """Frases que identifican un tema en otros textos. Para personas («Pedro Sánchez») también vale el
-    apellido, pero como prueba débil: hay muchos Sánchez."""
+    """Frases que identifican un tema en otros textos: el título entero y, si lo tiene, sin el añadido de
+    la búsqueda o la aclaración de Wikipedia («La bola negra (película)» → «la bola negra»). Para personas
+    («Pedro Sánchez») también vale el apellido, pero como prueba débil y solo si no es de los más comunes."""
     out = [(p, True) for p in story_phrases(title)]
+    base = norm(re.sub(r"\s*\([^)]*\)\s*$", "", title or ""))
+    previous = None
+    while base != previous:
+        previous, base = base, _QUERY_TAIL.sub("", base)
+        base = re.sub(r"\s+(?:\d{1,2}|de|del|la|el|los|las|en|y)$", "", base)
+    if base and (len(base.split()) >= 2 or (len(base) >= 6 and base not in GENERIC_TOKENS)) and all(base != p for p, _ in out):
+        out.append((base, True))
     words = tokens(title)
     if len(words) >= 2 and strip_accents(words[0]) in FIRST_NAMES:
         surname = words[-1]
-        if len(surname) >= 5 and surname not in GENERIC_TOKENS:
+        if len(surname) >= 5 and surname not in GENERIC_TOKENS and surname not in COMMON_SURNAMES:
             out.append((surname, False))
     return out
 
@@ -113,8 +228,25 @@ def _headline_ident(title: str) -> str:
     return key(clean_headline(title or ""))[:60]
 
 
+def _accent_key(text: str) -> str:
+    return " ".join(re.sub(r"[^\w]+|_", " ", (text or "").lower()).split())
+
+
+def families_of(titles) -> set:
+    found = set()
+    for title in titles:
+        for word in tokens(title):
+            word = strip_accents(word)
+            if word in _FAMILY_OF:
+                found.add(_FAMILY_OF[word])
+            elif word in EVENT_WORDS:
+                found.add(word)
+    return found
+
+
 class _Group:
-    """Temas que ya sabemos que van juntos (una tendencia de X ligada a su historia de Google)."""
+    """Temas que van juntos: al principio, una tendencia de X ligada a su historia de Google; después,
+    toda una historia, para comparar cada tema nuevo con todo lo que ya se sabe de ella."""
 
     def __init__(self, topics: list):
         self.topics = sorted(topics, key=lambda t: (-t["heat"], -t["potential"]))
@@ -123,42 +255,95 @@ class _Group:
         for topic in topics:
             self.niches.update(topic.get("niches") or [topic["niche"]])
         self.niches.discard("otros")
-        heads = [n.get("title") or "" for t in topics for n in (t.get("news") or {}).get("items") or []]
-        self.headline_keys = {_headline_ident(h) for h in heads if h}
-        self.headlines_text = "\n".join(norm(h) for h in heads)
+        items = [(t, n) for t in topics for n in (t.get("news") or {}).get("items") or [] if n.get("title")]
+        every = [clean_headline(n["title"]) for _, n in items]
+        heads = [clean_headline(n["title"]) for t, n in items if qualifies(t, n)]
+        # Los titulares que hablan del tema (para saber de qué va) y todos los que trajo la búsqueda (para
+        # encontrar en ellos los nombres de otros temas: «Chari» sale en noticias de «La isla de las tentaciones»).
+        self.headlines = [norm(h) for h in heads]
+        self.headline_keys = {_headline_ident(h) for h in heads}
+        self.every_key = {_headline_ident(h) for h in every}
+        self.headlines_text = "\n".join(norm(h) for h in every)
+        self.headlines_accented = "\n".join(_accent_key(h) for h in every)
         self.related_text = "\n".join(norm(r) for t in topics for r in (t.get("related") or []))
+        self.described_text = "\n".join(norm(d) for t in topics for d in (t.get("description"), t.get("extra_description")) if d)
         self.titles_text = "\n".join(norm(t["title"]) for t in topics)
-        self.phrases = [(_phrase_rx(p), strong) for t in topics for p, strong in title_phrases(t["title"])]
+        self.titles_accented = "\n".join(_accent_key(t["title"]) for t in topics)
+        self.phrases = []
+        for topic in topics:
+            accented = strip_accents(topic["title"]) != topic["title"]
+            for phrase, strong in title_phrases(topic["title"]):
+                exact = None
+                if accented and len(phrase.split()) == len(_accent_key(topic["title"]).split()):
+                    exact = _accented_rx(_accent_key(topic["title"]))
+                self.phrases.append((_phrase_rx(phrase), strong, exact, " " in phrase))
+        self.families = families_of(t["title"] for t in topics)
+        descriptions = [d for t in topics for d in (t.get("description"), t.get("extra_description"))]
+        text = " ".join([t["title"] for t in topics] + heads[:8] + [r for t in topics for r in (t.get("related") or [])[:4]])
+        self.scope = scope_of(text, sorted(self.niches), descriptions, heads[:5])
 
 
 def _hits(rx, text: str) -> int:
     return len(rx.findall(text)) if text else 0
 
 
+def _family_share(x: _Group, families: set) -> float:
+    """Qué parte de los titulares de un grupo habla del acontecimiento (familia) de otro."""
+    if not x.headlines:
+        return 0.0
+    patterns = [_FAMILY_RX[f] for f in families if f in _FAMILY_RX]
+    if not patterns:
+        return 0.0
+    hits = 0
+    for headline in x.headlines:
+        if any(p.search(headline) for p in patterns) or ("elecciones" in families and _ELECTION_DATE.search(headline)):
+            hits += 1
+    return hits / len(x.headlines)
+
+
 def evidence(a: _Group, b: _Group) -> int:
     """Cuánto indica que dos grupos de temas son la misma historia."""
-    score = 3 * min(len(a.headline_keys & b.headline_keys), 2)
+    if a.families and b.families and not (a.families & b.families):
+        return 0
+    shared = a.headline_keys & b.headline_keys
+    score = 3 * min(len(shared), 2) + min(len((a.every_key & b.every_key) - shared), 1)
     for x, y in ((a, b), (b, a)):
-        for rx, strong in x.phrases:
-            if _hits(rx, y.titles_text):
-                score += 2 if strong else 1
+        for rx, strong, exact, multiword in x.phrases:
+            titles = _hits(exact, y.titles_accented) if exact else _hits(rx, y.titles_text)
+            if titles:
+                score += 2
             if _hits(rx, y.related_text):
                 score += 2 if strong else 1
-            found = _hits(rx, y.headlines_text)
+            if strong and _hits(rx, y.described_text):
+                score += 2
+            found = _hits(exact, y.headlines_accented) if exact else _hits(rx, y.headlines_text)
             if found >= 2:
-                score += 2 if strong else 1
+                score += 3 if strong and multiword else 2
+                if not x.headlines:
+                    score += 1
             elif found == 1 and strong:
                 score += 1
+        if y.families and x.families <= y.families and a.scope == b.scope:
+            share = _family_share(x, y.families)
+            if share >= 0.5 and (len(x.headlines) == 1 or share * len(x.headlines) >= 2):
+                score += 4
+    if a.families & b.families and a.scope == b.scope:
+        score += 2
     return score
 
 
+def _related_niches(a: set, b: set) -> bool:
+    return bool(a & b) or any(a & family and b & family for family in _AFFINITY)
+
+
 def _needed(a: _Group, b: _Group) -> int:
-    return 3 if (a.niches & b.niches or not a.niches or not b.niches) else 5
+    needed = 3 if (not a.niches or not b.niches or _related_niches(a.niches, b.niches)) else 5
+    return needed if a.scope == b.scope else needed + 3
 
 
 def cluster(topics: list) -> list:
-    """Agrupa los temas en historias. Cada grupo se une, como mucho, al grupo más caliente con el que
-    comparte titulares, búsquedas o nombres: así un tema nunca une dos historias distintas."""
+    """Agrupa los temas en historias. Cada grupo (de más caliente a menos) se une a la historia ya formada
+    con la que más pruebas comparte: titulares, búsquedas, nombres o el mismo acontecimiento."""
     by_key = {t["key"]: t for t in topics}
     parent = {t["key"]: t["key"] for t in topics}
 
@@ -177,22 +362,21 @@ def cluster(topics: list) -> list:
         seeds.setdefault(find(topic["key"]), []).append(topic)
     groups = sorted((_Group(members) for members in seeds.values()), key=lambda g: -g.heat)
 
-    clusters, cluster_of = [], {}
-    for index, group in enumerate(groups):
+    stories_found = []
+    for group in groups:
         best, best_score = None, 0
-        for other in range(index):
-            score = evidence(group, groups[other])
-            if score >= _needed(group, groups[other]) and score > best_score:
-                best, best_score = other, score
-        if best is not None:
-            target = cluster_of[best]
-            if sum(len(groups[i].topics) for i in clusters[target]) + len(group.topics) <= MAX_TOPICS:
-                cluster_of[index] = target
-                clusters[target].append(index)
+        for index, (members, combined) in enumerate(stories_found):
+            if sum(len(g.topics) for g in members) + len(group.topics) > MAX_TOPICS:
                 continue
-        cluster_of[index] = len(clusters)
-        clusters.append([index])
-    return [[t for i in members for t in groups[i].topics] for members in clusters]
+            score = evidence(group, combined)
+            if score >= _needed(group, combined) and score > best_score:
+                best, best_score = index, score
+        if best is None:
+            stories_found.append(([group], group))
+        else:
+            members = stories_found[best][0] + [group]
+            stories_found[best] = (members, _Group([t for g in members for t in g.topics]))
+    return [[t for g in members for t in g.topics] for members, _ in stories_found]
 
 
 def is_event(title: str) -> bool:
@@ -206,11 +390,25 @@ def is_routine(title: str, niche: str) -> bool:
     return bool(_ROUTINE_RX.search(norm(title)))
 
 
-def scope_of(text: str, niches: list) -> str:
-    """«espana» si la historia tiene protagonistas o lugares españoles; «mundo» si es de fuera."""
+def is_english(text: str) -> bool:
+    words = norm(text).split()
+    english = sum(1 for w in words if w in _ENGLISH_WORDS)
+    return english >= 2 and english > sum(1 for w in words if w in _SPANISH_WORDS)
+
+
+def scope_of(text: str, niches: list, descriptions=(), headlines=()) -> str:
+    """«espana» si la historia tiene protagonistas o lugares españoles; «mundo» si es de fuera.
+    La descripción de Wikipedia manda («ciclista español»); un gentilicio extranjero («actor
+    estadounidense») o unos titulares en inglés inclinan la balanza hacia fuera."""
+    described = " ".join(norm(d) for d in descriptions if d)
+    if _SPANISH_DEMONYM.search(described):
+        return "espana"
     plain = norm(text)
     spain = len(_SPAIN_RX.findall(plain))
-    world = len(_WORLD_RX.findall(plain))
+    world = len(_WORLD_RX.findall(plain)) + 2 * min(1, len(_FOREIGN_RX.findall(described)))
+    sample = [h for h in headlines if h][:5]
+    if sample and sum(1 for h in sample if is_english(h)) * 2 >= len(sample):
+        world += 2
     if spain and spain >= world:
         return "espana"
     if "internacional" in niches or world:
@@ -223,23 +421,81 @@ def _overlap(a: str, b: str) -> float:
     return len(ta & tb) / max(1, min(len(ta), len(tb)))
 
 
+def _mentions(topic: dict, others: list) -> int:
+    """Cuántos de los otros temas de la historia hablan de este en sus titulares."""
+    phrases = [_phrase_rx(p) for p, strong in title_phrases(topic["title"]) if strong]
+    if not phrases:
+        return 0
+    count = 0
+    for other in others:
+        if other is topic:
+            continue
+        text = "\n".join(norm(n.get("title") or "") for n in (other.get("news") or {}).get("items") or [])
+        if any(rx.search(text) for rx in phrases):
+            count += 1
+    return count
+
+
 def _lead(ordered: list) -> dict:
+    """El tema que da nombre a la historia: aquel del que hablan los demás («La bola negra», no uno de sus
+    actores) y, si no, el acontecimiento («Elecciones generales España») antes que una persona o un hashtag."""
     root = ordered[0]
-    if is_event(root["title"]):
-        return root
-    for topic in ordered[1:4]:
-        if topic["heat"] >= root["heat"] - 12 and is_event(topic["title"]):
-            return topic
-    return root
+    candidates = [t for t in ordered[:6] if t["heat"] >= root["heat"] - 15]
+    return max(candidates, key=lambda t: (_mentions(t, ordered) + 2 * is_event(t["title"]), not t["title"].startswith("#"),
+                                          bool(t.get("google")), t is root, t["heat"]))
+
+
+_DISPLAY_TAIL = re.compile(r"\s+(?:[úu]ltima hora|hoy|en directo|directo|en vivo)$", re.I)
+
+
+def display_title(title: str) -> str:
+    """«La bola negra (película)» → «La bola negra»; «Subida pensiones 2027 última hora» → «Subida pensiones
+    2027»: la aclaración de Wikipedia y la coletilla de la búsqueda sobran en un titular."""
+    clean = _DISPLAY_TAIL.sub("", re.sub(r"\s*\([^)]*\)\s*$", "", title or "")).strip()
+    return clean or title
+
+
+_FULL_NAME = r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\s+{}(?![\wáéíóúñ])"
+
+
+def unconfirmed(topic: dict) -> bool:
+    """Una tendencia de X de una sola palabra («Cortés», «Chari») sin respaldo de Google ni Wikipedia, que
+    solo un titular explica o que en cada titular es una persona distinta (Íñigo Cortés, Manuel Cortés…):
+    no sabemos de verdad de qué va."""
+    if set(topic.get("sources") or []) - {"x", "news"} or len(tokens(topic["title"])) != 1 or topic["title"].startswith("#"):
+        return False
+    heads = [clean_headline(n.get("title") or "") for n in (topic.get("news") or {}).get("items") or [] if qualifies(topic, n)]
+    if len(heads) < 2:
+        return True
+    pattern = re.compile(_FULL_NAME.format(re.escape(topic["title"].strip())))
+    names = {m.group(1) for h in heads for m in pattern.finditer(h)}
+    return len(names) >= 2
+
+
+def _line(item: dict) -> dict:
+    return {"text": clean_headline(item.get("title") or ""), "source": item.get("source"),
+            "published": item.get("published"), "url": item.get("url")}
 
 
 def _synopsis(lead: dict, ordered: list, news: list) -> list:
-    """Qué ha pasado: el titular que lo explica y, si aporta algo nuevo, un segundo titular de otro medio."""
-    why = lead.get("why") or next((t["why"] for t in ordered if t.get("why")), None)
+    """Qué ha pasado: el titular que lo explica (que hable del protagonista de la historia) y, si aporta
+    algo nuevo, un segundo titular de otro medio, mejor del propio tema principal que de uno secundario."""
+    if unconfirmed(lead):
+        return []
     lines = []
+    why = lead.get("why")
     if why:
         lines.append({"text": why["title"], "source": why.get("source"), "published": why.get("published"), "url": why.get("url")})
-    for item in news:
+    else:
+        first = next((n for n in news if len(clean_headline(n.get("title") or "")) >= 25 and qualifies(lead, n)), None)
+        if first:
+            lines.append(_line(first))
+        else:
+            why = next((t["why"] for t in ordered if t.get("why") and not unconfirmed(t)), None)
+            if why:
+                lines.append({"text": why["title"], "source": why.get("source"), "published": why.get("published"), "url": why.get("url")})
+    own = {_headline_ident(n.get("title")) for n in (lead.get("news") or {}).get("items") or []}
+    for item in sorted(news, key=lambda n: _headline_ident(n.get("title")) not in own):
         if len(lines) >= 2:
             break
         text = clean_headline(item.get("title") or "")
@@ -247,7 +503,7 @@ def _synopsis(lead: dict, ordered: list, news: list) -> list:
             continue
         if lines and (_overlap(text, lines[0]["text"]) >= 0.5 or (item.get("source") and item.get("source") == lines[0].get("source"))):
             continue
-        lines.append({"text": text, "source": item.get("source"), "published": item.get("published"), "url": item.get("url")})
+        lines.append(_line(item))
     return lines
 
 
@@ -332,16 +588,28 @@ def summary(story: dict) -> str:
 
 
 def is_alert(story: dict) -> bool:
-    """Excepcional: lo busca muchísima gente, se comenta en todas partes y acaba de pasar. Es raro a propósito."""
+    """Excepcional: lo busca muchísima gente, se comenta en todas partes y acaba de pasar. Es raro a propósito.
+    Dos caminos: un estallido (calor altísimo en las últimas 18 h) o una historia que lo ocupa todo durante
+    su primer día (seis o más tendencias sobre lo mismo, top 3 en X, ocho medios y tres plataformas)."""
     if story["routine"] or story["phase"] in ("enfriandose",):
         return False
     elapsed = story.get("elapsed_hours")
-    if elapsed is not None and elapsed > 18:
-        return False
     floor = 500_000 if story["scope"] == "mundo" else 200_000
     platforms = len([s for s in story["sources"] if s != "news"])
-    loud = (story.get("x_rank") or 99) <= 3 or (story.get("outlets") or 0) >= 5
-    return story["heat"] >= 85 and (story.get("volume") or 0) >= floor and loud and platforms >= 2
+    volume, x_rank, outlets = story.get("volume") or 0, story.get("x_rank") or 99, story.get("outlets") or 0
+    burst = story["heat"] >= 85 and volume >= floor and (x_rank <= 3 or outlets >= 5) and platforms >= 2
+    if burst and (elapsed is None or elapsed <= 18):
+        return True
+    dominant = (story.get("trending") or 0) >= 6 and volume >= floor and x_rank <= 3 and outlets >= 8 and platforms >= 3
+    return dominant and (elapsed is None or elapsed <= 24)
+
+
+def _elapsed(ordered: list, now: float):
+    """Horas desde que empezó la historia: desde su primer tema, no desde el último que se sumó."""
+    started = min((t["started_at"] for t in ordered if t.get("started_at")), default=None)
+    if started:
+        return round(max(0.0, (now - started) / 3600), 2)
+    return max((t["elapsed_hours"] for t in ordered if t.get("elapsed_hours") is not None), default=None)
 
 
 def _build(ordered: list, now: float, efemerides: list) -> dict:
@@ -392,7 +660,7 @@ def _build(ordered: list, now: float, efemerides: list) -> dict:
         context = {"subject": lead.get("what_subject") or lead["title"], "text": lead["what"]}
     story = {
         "key": lead["key"],
-        "title": lead["title"],
+        "title": display_title(lead["title"]),
         "topic_keys": [lead["key"]] + [t["key"] for t in ordered if t["key"] != lead["key"]],
         "members": members[:8],
         "niche": niches[0],
@@ -404,8 +672,9 @@ def _build(ordered: list, now: float, efemerides: list) -> dict:
         "phase_reason": hottest_phase.get("phase_reason") or "",
         "remaining_hours": hottest_phase.get("remaining_hours"),
         "typical_hours": hottest_phase.get("typical_hours"),
-        "elapsed_hours": min((t["elapsed_hours"] for t in ordered if t.get("elapsed_hours") is not None), default=None),
+        "elapsed_hours": _elapsed(ordered, now),
         "started_at": min((t["started_at"] for t in ordered if t.get("started_at")), default=None),
+        "trending": len(ordered),
         "volume": sum(volumes.values()),
         "trends": len(volumes),
         "x_rank": min(x_ranks) if x_ranks else None,
@@ -427,18 +696,37 @@ def _build(ordered: list, now: float, efemerides: list) -> dict:
     }
     story["synopsis"] = _synopsis(lead, ordered, news)
     story["routine"] = is_routine(lead["title"], lead["niche"]) or is_routine(root["title"], root["niche"])
-    story["scope"] = scope_of(text_for_scope, niches)
+    descriptions = [t.get("description") or t.get("extra_description") for t in ordered] + [(context or {}).get("text")]
+    story["scope"] = scope_of(text_for_scope, niches, descriptions, [n.get("title") for n in news[:5]])
     story["summary"] = summary(story)
     story["angle"] = angle(story, ordered, efemerides)
     story["alert"] = is_alert(story)
-    score = story["heat"] + PHASE_BONUS.get(story["phase"], 0) + 2 * min(len(ordered) - 1, 3)
+    story["score"] = importance(story, len(ordered))
+    if unconfirmed(lead):
+        story["why"] = None
+        story["score"] = round(story["score"] - 8, 1)
+    return story
+
+
+VOLUME_POINTS = ((1_000_000, 12), (500_000, 10), (200_000, 8), (100_000, 6), (50_000, 4), (20_000, 2))
+
+
+def importance(story: dict, trending: int) -> float:
+    """Cuánto importa ahora: el calor y su momento, pero también el tamaño (búsquedas, temas que arrastra,
+    puesto en X, medios). Unas elecciones con diez tendencias pesan más que un famoso con 10 000 búsquedas."""
+    score = story["heat"] + PHASE_BONUS.get(story["phase"], 0)
+    score += 2.5 * min(trending - 1, 5)
+    score += next((points for limit, points in VOLUME_POINTS if (story.get("volume") or 0) >= limit), 0)
+    x_rank = story.get("x_rank")
+    score += 4 if x_rank and x_rank <= 3 else 2 if x_rank and x_rank <= 10 else 0
+    outlets = story.get("outlets") or 0
+    score += 4 if outlets >= 8 else 2 if outlets >= 5 else 0
     score += 6 if story["scope"] == "espana" else -6
     if story["routine"]:
         score -= 14
-    if not story["why"] and not context:
+    if not story["why"] and not story.get("context"):
         score -= 6
-    story["score"] = round(score, 1)
-    return story
+    return round(score, 1)
 
 
 def build_stories(topics: list, now: float = None, efemerides: list = None) -> list:

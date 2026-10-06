@@ -81,7 +81,7 @@ def _iso_ts(text):
     if not text:
         return None
     try:
-        return int(dt.datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp())
+        return int(dt.datetime.fromisoformat(re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", text.replace("Z", "+00:00"))).timestamp())
     except ValueError:
         try:
             return int(dt.datetime.strptime(text, "%Y-%m-%dT%H:%M:%S%z").timestamp())
@@ -122,12 +122,44 @@ def parse_youtube_feed(text: str) -> list:
     return items
 
 
+# La fecha de publicación en la página del vídeo: en el JSON del reproductor («publishDate»), a veces con
+# las comillas escapadas, o como texto («5 oct 2026»).
 _WATCH_DATE = (
-    re.compile(r'<meta itemprop="datePublished" content="([^"]+)"'),
-    re.compile(r'"publishDate":"([^"]+)"'),
-    re.compile(r'<meta itemprop="uploadDate" content="([^"]+)"'),
-    re.compile(r'"uploadDate":"([^"]+)"'),
+    re.compile(r'\\?"(?:publishDate|uploadDate)\\?"\s*:\s*\\?"(\d{4}-\d{2}-\d{2}[^"\\]*)'),
+    re.compile(r'itemprop="(?:datePublished|uploadDate)" content="([^"]+)"'),
 )
+_WATCH_DATE_TEXT = re.compile(r'"(?:publishDate|dateText)"\s*:\s*\{\s*"simpleText"\s*:\s*"([^"]+)"')
+_MONTHS = {"ene": 1, "jan": 1, "feb": 2, "mar": 3, "abr": 4, "apr": 4, "may": 5, "jun": 6, "jul": 7, "ago": 8,
+           "aug": 8, "sept": 9, "sep": 9, "oct": 10, "nov": 11, "dic": 12, "dec": 12}
+
+
+def _human_date(text: str):
+    """«5 oct 2026», «Estrenado el 5 oct 2026», «Oct 5, 2026» → marca de tiempo (mediodía de ese día)."""
+    clean = (text or "").lower().replace(".", " ").replace(",", " ")
+    day = re.search(r"(\d{1,2})\s+(?:de\s+)?([a-z]{3,5})\w*\s+(?:de\s+)?(\d{4})", clean)
+    if day:
+        number, month, year = day.group(1), day.group(2), day.group(3)
+    else:
+        day = re.search(r"([a-z]{3,5})\w*\s+(\d{1,2})\s+(\d{4})", clean)
+        if not day:
+            return None
+        month, number, year = day.group(1), day.group(2), day.group(3)
+    month_number = _MONTHS.get(month[:4]) or _MONTHS.get(month[:3])
+    if not month_number:
+        return None
+    try:
+        return int(dt.datetime(int(year), month_number, int(number), 12).timestamp())
+    except ValueError:
+        return None
+
+
+def parse_watch_date(text: str):
+    for pattern in _WATCH_DATE:
+        found = pattern.search(text or "")
+        if found and _iso_ts(found.group(1)):
+            return _iso_ts(found.group(1))
+    found = _WATCH_DATE_TEXT.search(text or "")
+    return _human_date(found.group(1)) if found else None
 
 
 def fetch_youtube(channel_id: str, session=None, known: dict = None) -> list:
@@ -172,11 +204,7 @@ def watch_date(vid: str, session) -> int:
         return None
     if response.status_code >= 400:
         return None
-    for pattern in _WATCH_DATE:
-        found = pattern.search(response.text)
-        if found and _iso_ts(found.group(1)):
-            return _iso_ts(found.group(1))
-    return None
+    return parse_watch_date(response.text)
 
 
 def fetch_youtube_tabs(channel_id: str, session, known: dict = None, per_tab: int = 15, lookups: int = 8):
@@ -185,7 +213,7 @@ def fetch_youtube_tabs(channel_id: str, session, known: dict = None, per_tab: in
     («hace 2 días») marcada como tal, y se reintenta en la siguiente sincronización."""
     known = known or {}
     now = time.time()
-    videos, understood = [], False
+    tabs, understood = [], False
     for tab in ("videos", "shorts"):
         try:
             response = session.get(YT_TAB.format(cid=channel_id, tab=tab), params={"hl": "es", "gl": "ES"}, timeout=TIMEOUT)
@@ -197,18 +225,21 @@ def fetch_youtube_tabs(channel_id: str, session, known: dict = None, per_tab: in
         if found is None:
             continue
         understood = True
-        videos.extend(found[:per_tab])
+        tabs.append(found[:per_tab])
     if not understood:
         return None
-    items, seen = [], set()
+    # Alternando pestañas, para que los últimos vídeos y los últimos Shorts tengan su fecha exacta.
+    videos = [tab[i] for i in range(max((len(t) for t in tabs), default=0)) for tab in tabs if i < len(tab)]
+    items, seen, failures = [], set(), 0
     for video in videos:
         if video["id"] in seen:
             continue
         seen.add(video["id"])
         published, source = known.get(video["id"]), "youtube"
-        if published is None and lookups > 0:
+        if published is None and lookups > 0 and failures < 2:
             lookups -= 1
             published = watch_date(video["id"], session)
+            failures = 0 if published else failures + 1
             time.sleep(0.3)
         if published is None and video.get("age_seconds") is not None:
             published, source = int(now - video["age_seconds"]), APPROX
@@ -290,7 +321,7 @@ def refresh_instagram_token(token: str, session=None) -> str:
 
 _TT_PLAYS = (re.compile(r'"playCount":\s?(\d+)'),)
 _YT_VIEWS = (
-    re.compile(r'"viewCount":"(\d+)"'),
+    re.compile(r'"viewCount":"([1-9]\d*)"'),
     re.compile(r'itemprop="interactionCount" content="(\d+)"'),
     re.compile(r'"originalViewCount":"(\d+)"'),
 )
@@ -323,8 +354,14 @@ def views_of(url: str, session=None):
         response = session.get(url, timeout=TIMEOUT)
         if response.status_code >= 400:
             return None
+        text = response.text
+        if platform == "youtube" and '"videoDetails"' in text:
+            at = text.index('"videoDetails"')
+            found = re.search(r'"viewCount":"(\d+)"', text[at:at + 30000])
+            if found:
+                return int(found.group(1))
         for pattern in patterns:
-            found = pattern.search(response.text)
+            found = pattern.search(text)
             if found:
                 return int(found.group(1))
     except Exception:
