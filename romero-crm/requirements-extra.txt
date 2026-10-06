@@ -1,0 +1,2 @@
+# Opcional: ideas con Claude (solo se usa si pones tu clave de la API en Ajustes)
+anthropic>=0.125

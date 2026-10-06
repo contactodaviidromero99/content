@@ -56,7 +56,7 @@ def open_window(url: str) -> bool:
             width=1440,
             height=920,
             min_size=(1080, 700),
-            background_color="#0d0d0d",
+            background_color="#07070c",
             text_select=True,
         )
         webview.start()
@@ -67,7 +67,7 @@ def open_window(url: str) -> bool:
 
 
 def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(prog="romero_crm", description=f"{APP_NAME}: radar de tendencias en España")
+    parser = argparse.ArgumentParser(prog="romero_crm", description=f"{APP_NAME}: lo que pasa en España, para tus vídeos")
     parser.add_argument("--web", action="store_true", help="abrir en el navegador en vez de en una ventana propia")
     parser.add_argument("--port", type=int, default=0, help="puerto local (por defecto, uno libre)")
     parser.add_argument("--demo", action="store_true", help=argparse.SUPPRESS)
@@ -86,6 +86,8 @@ def main(argv=None) -> None:
 
     settings = Settings(root / "settings.json")
     storage = Storage(root)
+    if args.demo:
+        DemoData().seed_planner(storage)
     engine = Engine(settings, storage, demo_loader)
     server = AppServer(engine, settings, storage, port=args.port or (8765 if args.web else 0))
     server.start()

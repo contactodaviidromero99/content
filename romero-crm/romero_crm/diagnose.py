@@ -302,6 +302,48 @@ def diag_pipeline() -> None:
     show("kpis", json.dumps(state.get("kpis"), ensure_ascii=False))
     show("nichos", [(n["id"], n["count"]) for n in state.get("niche_stats", [])][:12])
     show("efemérides destacadas", [(h["date"], h["years_ago"], h["title"]) for h in state["efemerides"]["highlights"][:8]])
+    section("PORTADA (las cinco historias de «Hoy»)")
+    stories = state.get("stories") or []
+    by_key = {s["key"]: s for s in stories}
+    show("historias", len(stories))
+    show("alertas", (state.get("portada") or {}).get("alerts"))
+    for key in (state.get("portada") or {}).get("keys") or []:
+        story = by_key.get(key) or {}
+        print(f"   ● {story.get('title')!r} [{story.get('niche')} · {story.get('scope')} · {story.get('phase')}] "
+              f"calor={story.get('heat')} pot={story.get('potential')} puntos={story.get('score')} rutina={story.get('routine')}")
+        print(f"       incluye:  {[m['title'] for m in story.get('members') or []]}")
+        for line in story.get("synopsis") or []:
+            print(f"       qué pasó: {line['text']!r} ({line.get('source')})")
+        print(f"       contexto: {story.get('context')}")
+        print(f"       enfoque:  {(story.get('angle') or {}).get('verdict')}")
+        for tip in (story.get("angle") or {}).get("tips") or []:
+            print(f"                 · {tip}")
+    section("HISTORIAS AGRUPADAS (más de un tema)")
+    for story in [s for s in stories if s.get("members")][:30]:
+        print(f"   - {story['title']!r} ({story['niche']}, {story['scope']}) <- {[m['title'] for m in story['members']]}")
+    show("en el ámbito mundo", [s["title"] for s in stories if s.get("scope") == "mundo"][:20])
+    show("recurrentes", [s["title"] for s in stories if s.get("routine")][:20])
+    show("horizonte", [(h["date"], h["type"], h["title"]) for h in state.get("horizon") or []])
+
+
+def diag_connections() -> None:
+    from . import connections
+    session = make_session()
+    session.cookies.set("SOCS", "CAI", domain=".youtube.com", path="/")
+    for handle in ("@YouTube", "@TEDx"):
+        try:
+            channel = connections.resolve_channel(handle, session)
+            items = connections.fetch_youtube(channel, session)
+            show(f"youtube {handle}", f"canal {channel} · {len(items)} vídeos")
+            for item in items[:3]:
+                print(f"   · {item['title'][:70]!r} · {item['views']} vistas · {item['published_at']} · {item['url']}")
+        except Exception as exc:
+            show(f"youtube {handle}", f"ERROR {exc}")
+    for url in ("https://www.tiktok.com/@scout2015/video/6718335390845095173", "https://www.youtube.com/watch?v=jNQXAC9IVRw"):
+        try:
+            show("vista previa", json.dumps(connections.preview(url), ensure_ascii=False)[:400])
+        except Exception as exc:
+            show("vista previa", f"ERROR {exc}")
 
 
 CHECKS = {
@@ -311,6 +353,7 @@ CHECKS = {
     "news": ("GOOGLE NEWS", diag_news),
     "youtube": ("YOUTUBE", diag_youtube),
     "pipeline": ("RADAR COMPLETO", diag_pipeline),
+    "conexiones": ("CONEXIONES (YOUTUBE, TIKTOK)", diag_connections),
 }
 
 

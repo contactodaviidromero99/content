@@ -50,7 +50,17 @@ GOOGLE_24H = [
     ("oposiciones educación", 10000, 200, 18.0, None, [9], ["oposiciones 2027", "temario oposiciones"], "cooling", []),
     ("vacuna gripe", 10000, 150, 9.0, None, [7], ["campaña vacunación gripe", "vacuna gripe 2026"], "peak",
      [("Campaña de vacunación de la gripe: fechas por comunidades", "Diario de salud (demo)")]),
-    ("pedro sánchez", 20000, 200, 6.0, None, [14], ["sánchez hoy", "comparecencia sánchez"], "peak", []),
+    ("pedro sánchez", 50000, 400, 2.5, None, [14], ["sánchez elecciones", "comparecencia sánchez", "adelanto electoral"], "rising",
+     [("Sánchez y Feijóo chocan en el Congreso por el calendario electoral", "Diario nacional (demo)"),
+      ("Qué pasaría si se adelantan las elecciones generales: fechas y escenarios", "Diario político (demo)")]),
+    ("elecciones generales", 100000, 1000, 2.0, None, [14],
+     ["cuándo son las elecciones generales", "encuesta elecciones generales", "coalición de izquierdas", "feijóo encuesta"], "explosive",
+     [("Qué pasaría si se adelantan las elecciones generales: fechas y escenarios", "Diario político (demo)"),
+      ("Sánchez y Feijóo chocan en el Congreso por el calendario electoral", "Diario nacional (demo)")]),
+    ("feijóo", 20000, 300, 2.0, None, [14], ["feijóo hoy", "feijóo congreso"], "rising",
+     [("Sánchez y Feijóo chocan en el Congreso por el calendario electoral", "Diario nacional (demo)")]),
+    ("aranceles trump", 50000, 400, 5.0, None, [14], ["aranceles europa", "trump aranceles ue", "qué son los aranceles"], "rising",
+     [("Estados Unidos anuncia nuevos aranceles a productos europeos", "Agencia internacional (demo)")]),
 ]
 
 X_TRENDS = [
@@ -61,6 +71,7 @@ X_TRENDS = [
     ("#GH", 11000, 14), ("Presupuestos", 6100, 5), ("Euribor", None, 4), ("Juan de Austria", 2100, 1),
     ("#LunesDeOtoño", 4300, 7), ("Halloween", 12500, 18), ("DANA", 5200, 8), ("Aitana", 7300, 13),
     ("Champions", 18800, 16), ("Rockstar", 6600, 3), ("Bernabéu", 9100, 20), ("Netflix", 5100, 12),
+    ("#EleccionesGenerales", 48000, 2), ("Coalición de izquierdas", 12500, 2), ("Trump", 21000, 5),
 ]
 
 WIKI_ARTICLES = [
@@ -93,11 +104,14 @@ NEWS = {
         ("Huelga de Renfe: servicios mínimos y trenes afectados este lunes", "Diario nacional (demo)", 6),
     ],
     "espana": [
+        ("Sánchez y Feijóo chocan en el Congreso por el calendario electoral", "Diario nacional (demo)", 2),
+        ("Qué pasaría si se adelantan las elecciones generales: fechas y escenarios", "Diario político (demo)", 2),
         ("El Congreso debate esta semana los presupuestos generales", "Diario nacional (demo)", 4),
         ("La AEMET activa avisos amarillos por lluvias en el este peninsular", "Diario nacional (demo)", 3),
         ("Día Mundial de los Docentes: por qué se celebra el 5 de octubre", "Diario educativo (demo)", 7),
     ],
-    "internacional": [("Ucrania: claves de la semana en el frente diplomático", "Agencia (demo)", 5)],
+    "internacional": [("Ucrania: claves de la semana en el frente diplomático", "Agencia (demo)", 5),
+                      ("Estados Unidos anuncia nuevos aranceles a productos europeos", "Agencia internacional (demo)", 4)],
     "economia": [("El euríbor cierra septiembre: así quedan las hipotecas", "Diario económico (demo)", 9)],
     "tecnologia": [("Cómo comprobar si WhatsApp está caído y qué hacer mientras tanto", "Web tecnológica (demo)", 1)],
     "entretenimiento": [
@@ -396,3 +410,43 @@ class DemoData:
 
     def _detail(self):
         return {"youtube": self._competitions()}
+
+    def _published(self):
+        """Vídeos publicados de ejemplo (en la app real llegan de YouTube e Instagram)."""
+        today = dt.datetime.fromtimestamp(self.now).replace(hour=19, minute=30, second=0)
+        rows = [
+            ("instagram", "demo-ig-1", "Ruiz-Mateos", 0, 48200, 3100),
+            ("youtube", "demo-yt-1", "Ruiz-Mateos", 0, 12900, 820),
+            ("instagram", "demo-ig-2", "La batalla de Lepanto en 90 segundos", 6, 131000, 9400),
+            ("youtube", "demo-yt-2", "La batalla de Lepanto en 90 segundos", 6, 40100, 2300),
+            ("instagram", "demo-ig-3", "El día que Madrid se levantó: 2 de mayo de 1808", 12, 88700, 6100),
+        ]
+        out = []
+        for platform, vid, title, days_ago, views, likes in rows:
+            published = int((today - dt.timedelta(days=days_ago)).timestamp())
+            if published > self.now:
+                published = int(self.now - 1800)
+            out.append({"platform": platform, "vid": vid, "url": f"https://example.com/{vid}", "title": title,
+                        "published_at": published, "views": views, "likes": likes, "comments": None, "shares": None,
+                        "thumbnail": None, "source": "demo"})
+        return out
+
+    def seed_planner(self, storage) -> None:
+        """Tareas de ejemplo para el calendario del modo demostración."""
+        today = dt.date.fromtimestamp(self.now)
+        if storage.plan_items((today - dt.timedelta(days=40)).isoformat(), (today + dt.timedelta(days=40)).isoformat()):
+            return
+        day = lambda n: (today + dt.timedelta(days=n)).isoformat()
+        rows = [
+            {"day": day(0), "kind": "publicar", "title": "Ruiz-Mateos", "platforms": ["instagram", "tiktok", "youtube"], "done": True},
+            {"day": day(1), "kind": "publicar", "title": "Estados Unidos en Vietnam", "platforms": ["instagram", "tiktok", "youtube"]},
+            {"day": day(1), "kind": "grabar", "title": "El caso para España", "time": "11:00"},
+            {"day": day(1), "kind": "grabar", "title": "Cuenca"},
+            {"day": day(3), "kind": "guion", "title": "Lepanto: el día que se detuvo el Imperio otomano"},
+            {"day": day(6), "kind": "publicar", "title": "Fiesta Nacional: por qué el 12 de octubre", "platforms": ["instagram", "tiktok"]},
+            {"day": day(-6), "kind": "publicar", "title": "La batalla de Lepanto en 90 segundos", "platforms": ["instagram", "youtube"], "done": True},
+            {"day": day(-1), "kind": "editar", "title": "Ruiz-Mateos", "done": True},
+            {"day": day(9), "kind": "idea", "title": "Trafalgar: la batalla que perdimos ganando a medias"},
+        ]
+        for row in rows:
+            storage.save_plan_item(dict(row))

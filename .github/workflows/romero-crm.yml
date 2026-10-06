@@ -1,8 +1,8 @@
-name: Romero CRM
+name: Romero Xandre CRM
 
 on:
   push:
-    branches: [main, claude/upbeat-carson-tq3p5m]
+    branches: [main, "claude/**"]
     paths:
       - "romero-crm/**"
       - ".github/workflows/romero-crm.yml"
@@ -33,7 +33,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt -r requirements-extra.txt
       - run: python -m unittest discover -s tests -v
 
   fuentes-reales:
@@ -74,9 +74,34 @@ jobs:
         run: |
           git archive --format=zip --prefix=content-main/ HEAD -o "$RUNNER_TEMP/repo.zip"
           ROMERO_ZIP_URL="file://$RUNNER_TEMP/repo.zip" bash romero-crm/scripts/instalar.sh
+      - name: Comprobar el icono de la aplicación (sin el pergamino de AppleScript)
+        run: |
+          APP="$HOME/Applications/Romero Xandre CRM.app"
+          test -d "$APP"
+          ls "$APP/Contents/Resources"
+          test ! -e "$APP/Contents/Resources/Assets.car"
+          if /usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$APP/Contents/Info.plist" 2>/dev/null; then
+            echo "CFBundleIconName sigue en el Info.plist"; exit 1
+          fi
+          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$APP/Contents/Info.plist"
+          codesign --verify --deep --strict "$APP" && echo "Firma correcta"
+          BRIGHTNESS="$(osascript -l JavaScript -e '
+            ObjC.import("AppKit");
+            var img = $.NSWorkspace.sharedWorkspace.iconForFile(ObjC.unwrap($.NSHomeDirectory()) + "/Applications/Romero Xandre CRM.app");
+            img.setSize($.NSMakeSize(64, 64));
+            var rep = $.NSBitmapImageRep.imageRepWithData(img.TIFFRepresentation);
+            var sum = 0, n = 0;
+            for (var y = 0; y < rep.pixelsHigh; y += 2) for (var x = 0; x < rep.pixelsWide; x += 2) {
+              var c = rep.colorAtXY(x, y);
+              if (c.alphaComponent > 0.5) { sum += (c.redComponent + c.greenComponent + c.blueComponent) / 3; n++; }
+            }
+            (sum / Math.max(n, 1)).toFixed(3);
+          ')"
+          echo "Brillo medio del icono que muestra macOS: $BRIGHTNESS (el nuestro es oscuro; el pergamino, claro)"
+          python3 -c "import sys; sys.exit(0 if float('$BRIGHTNESS') < 0.45 else 1)"
       - name: Comprobar que la aplicación arranca y responde
         run: |
-          test -d "$HOME/Applications/Romero CRM.app"
+          test -d "$HOME/Applications/Romero Xandre CRM.app"
           VENV="$HOME/Library/Application Support/Romero CRM/venv"
           "$VENV/bin/python" --version
           "$VENV/bin/python" -c "import webview; print('Ventana propia (pywebview) disponible')"
@@ -86,11 +111,11 @@ jobs:
               PORT="$(lsof -nP -a -p "$PID" -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 { sub(/.*:/, "", $9); print $9; exit }')"
               if [ -n "$PORT" ] && curl -fsS "http://127.0.0.1:$PORT/api/status"; then
                 echo
-                echo "Romero CRM responde en el puerto $PORT"
+                echo "Romero Xandre CRM responde en el puerto $PORT"
                 exit 0
               fi
             fi
             sleep 2
           done
-          echo "Romero CRM no llegó a responder"
+          echo "Romero Xandre CRM no llegó a responder"
           exit 1

@@ -77,3 +77,69 @@ export function daysUntil(iso) {
   if (diff === 1) return 'Mañana';
   return `En ${diff} días`;
 }
+
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+export function parseIso(iso) {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export function isoDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function todayIso() {
+  return isoDate(new Date());
+}
+
+export function addDays(iso, n) {
+  const date = parseIso(iso);
+  date.setDate(date.getDate() + n);
+  return isoDate(date);
+}
+
+export function monthName(index) {
+  return MONTHS[index];
+}
+
+export function monthShort(index) {
+  return MONTHS_SHORT[index];
+}
+
+export function weekday(iso) {
+  return WEEKDAYS[parseIso(iso).getDay()];
+}
+
+export function niceDate(iso, withWeekday = true) {
+  const date = parseIso(iso);
+  const text = `${date.getDate()} de ${MONTHS[date.getMonth()]}`;
+  return withWeekday ? `${WEEKDAYS[date.getDay()]}, ${text}` : text;
+}
+
+export function relDay(iso) {
+  const diff = Math.round((parseIso(iso) - parseIso(todayIso())) / 86400000);
+  if (diff === 0) return 'hoy';
+  if (diff === 1) return 'mañana';
+  if (diff === -1) return 'ayer';
+  if (diff > 1 && diff < 7) return `el ${WEEKDAYS[parseIso(iso).getDay()]}`;
+  if (diff > 0) return `en ${diff} días`;
+  return `hace ${-diff} días`;
+}
+
+export function cap(text) {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+export function dayDistance(iso) {
+  const diff = Math.round((parseIso(iso) - parseIso(todayIso())) / 86400000);
+  if (diff === 0) return 'hoy';
+  if (diff === 1) return 'mañana';
+  if (diff === -1) return 'ayer';
+  return diff > 0 ? `dentro de ${diff} días` : `hace ${-diff} días`;
+}

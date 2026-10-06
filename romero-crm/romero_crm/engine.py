@@ -6,13 +6,15 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import APP_NAME, APP_VERSION, analysis, explain
+from . import APP_NAME, APP_SHORT, APP_VERSION, ai, analysis, connections, explain, planner, recap, stories
 from .net import APP_UA, SourceError, make_session
 from .niches import NICHES, classify
 from .sources import efemerides, google_trends, news, wikipedia, x_trends, youtube
 from .sources.base import SOURCE_LABELS, SourceResult, failure
 
 CADENCE_MINUTES = {"wikipedia": 180, "google_week": 180, "efemerides": 720}
+CONNECTIONS_EVERY = 2 * 3600
+INSTAGRAM_TOKEN_REFRESH = 7 * 86400
 EXPLAIN_TOP = 24
 TREND_NEWS_LIMIT = 14
 DESCRIPTION_TTL = 24 * 3600
@@ -37,6 +39,12 @@ class Engine:
         self._youtube_cache = storage.load_json("youtube-cache.json") or {}
         self._description_cache = storage.load_json("descriptions-cache.json") or {}
         self._trend_news_cache = {}
+        self.revision = 0
+        self.connections = storage.load_json("connections-status.json") or {}
+        self._sync_lock = threading.Lock()
+        self._ai_cache = ai.prune(storage.load_json("ai-cache.json") or {})
+        self.ai_status = storage.load_json("ai-status.json") or {}
+        self._ai_lock = threading.Lock()
 
     def start(self) -> None:
         threading.Thread(target=self._scheduler, name="romero-scheduler", daemon=True).start()
@@ -69,7 +77,7 @@ class Engine:
         if not result:
             return True
         if source == "efemerides" and result.ok and result.items:
-            if result.items[0].get("date") != dt.date.today().isoformat():
+            if (result.meta or {}).get("today", result.items[0].get("date")) != dt.date.today().isoformat():
                 return True
         age = time.time() - (result.fetched_at or 0)
         if not result.ok and not (result.meta or {}).get("requires_login"):
@@ -161,16 +169,27 @@ class Engine:
             if "wikipedia" in due:
                 self.storage.upsert_wiki(wiki.items)
 
+        efem = self.results.get("efemerides")
+        nearby = stories.upcoming_efemerides(efem.items if efem and efem.ok else [])
         if enabled.get("youtube", True) and settings["youtube_topics"] > 0:
-            self._refresh_youtube(topics, settings["youtube_topics"], force)
+            preliminary = stories.build_stories(topics, now, nearby)
+            self._refresh_youtube(topics, preliminary, settings["youtube_topics"], force)
         self._attach_youtube(topics)
+        story_list = stories.build_stories(topics, now, nearby)
+        front = stories.portada(story_list)
+        ai.attach(story_list, self._ai_cache)
 
         self.storage.record_topics([t for t in topics if not t["utility"]][:150], now)
+        self.storage.record_stories(story_list[:60], now)
         self.storage.prune()
-        state = self._compose_state(topics, google_rows, now)
+        state = self._compose_state(topics, story_list, front, google_rows, now)
         with self._lock:
             self.state = state
+            self.revision += 1
         self.storage.save_state(state)
+        self.request_ai(front["keys"])
+        if force or time.time() - (self.connections.get("_synced_at") or 0) > CONNECTIONS_EVERY:
+            self.sync_connections()
 
     def _run_fetch(self, fetcher, source: str) -> SourceResult:
         self.progress[source] = "running"
@@ -287,8 +306,12 @@ class Engine:
             return "España"
         return None
 
-    def _refresh_youtube(self, topics: list, limit: int, force: bool) -> None:
-        candidates = [t for t in topics if not t["utility"]][:limit]
+    def _refresh_youtube(self, topics: list, story_list: list, limit: int, force: bool) -> None:
+        """Mide la competencia en YouTube de las historias de portada primero y luego de las siguientes."""
+        by_key = {t["key"]: t for t in topics}
+        front = stories.portada(story_list)["keys"]
+        ordered = front + [s["key"] for s in story_list if s["key"] not in front]
+        candidates = [by_key[k] for k in ordered if k in by_key][:limit]
         self.progress["youtube"] = "running"
         if not candidates:
             result = SourceResult(source="youtube", ok=False, error="Todavía no hay temas calientes que analizar.")
@@ -316,7 +339,11 @@ class Engine:
         for topic in topics:
             info = by_key.get(topic["key"]) or self._youtube_cache.get(topic["key"])
             if info:
-                topic["youtube"] = {k: info[k] for k in ("count", "top_views", "median_views", "level", "label", "checked_at") if k in info}
+                summary = {k: info[k] for k in ("count", "top_views", "median_views", "level", "label", "checked_at", "search_url") if k in info}
+                videos = sorted((v for v in info.get("videos") or [] if v.get("views") is not None), key=lambda v: -v["views"])
+                if videos:
+                    summary.update(top_title=videos[0].get("title"), top_url=videos[0].get("url"), top_channel=videos[0].get("channel"))
+                topic["youtube"] = summary
 
     def _source_status(self) -> dict:
         settings = self.settings.get()
@@ -337,7 +364,7 @@ class Engine:
             }
         return status
 
-    def _compose_state(self, topics: list, google_rows: list, now: float) -> dict:
+    def _compose_state(self, topics: list, story_list: list, front: dict, google_rows: list, now: float) -> dict:
         def result_items(source):
             result = self.results.get(source)
             return result.items if result and result.ok else []
@@ -345,8 +372,6 @@ class Engine:
         news_result = self.results.get("news")
         efem = self.results.get("efemerides")
         topic_by_key = {t["key"]: t for t in topics}
-        rising = [t for t in topics if t["phase"] in ("explosivo", "subiendo", "temprana") and not t["utility"]]
-        rising.sort(key=lambda t: -t["potential"])
         topic_niche = {(s, t[s]["id"]): t["niche"] for t in topics for s in ("google", "x") if t.get(s)}
         google_items = result_items("google")
         for item in google_items:
@@ -354,20 +379,20 @@ class Engine:
         x_items = result_items("x")
         for item in x_items:
             item["niche"] = topic_niche.get(("x", item["id"])) or classify(item["title"])[0]
+        today = dt.date.fromtimestamp(now).isoformat()
+        highlights = [h for h in ((efem.meta or {}).get("highlights", []) if efem and efem.ok else []) if h["date"] >= today]
 
         return {
-            "app": {"name": APP_NAME, "version": APP_VERSION, "demo": bool(self.demo_loader)},
+            "app": {"name": APP_NAME, "short": APP_SHORT, "version": APP_VERSION, "demo": bool(self.demo_loader)},
             "generated_at": now,
             "niches": [{"id": nid, "name": name} for nid, name in NICHES],
             "sources": self._source_status(),
+            "stories": story_list[:150],
+            "portada": front,
             "topics": topics[:220],
             "kpis": analysis.kpis(topics, self.results),
             "niche_stats": analysis.niche_stats([t for t in topics if not t["utility"]]),
-            "predictions": {
-                "rising": [t["key"] for t in rising[:20]],
-                "niche_momentum": analysis.niche_momentum(google_rows, now),
-                "lifecycle": analysis.lifecycle_stats(google_rows),
-            },
+            "niche_momentum": analysis.niche_momentum(google_rows, now),
             "platforms": {
                 "google": google_items,
                 "x": x_items,
@@ -379,10 +404,7 @@ class Engine:
                 },
                 "youtube": [dict(i, topic=topic_by_key.get(i.get("topic_key"), {}).get("title")) for i in result_items("youtube")],
             },
-            "efemerides": {
-                "days": efem.items if efem and efem.ok else [],
-                "highlights": (efem.meta or {}).get("highlights", []) if efem and efem.ok else [],
-            },
+            "efemerides": {"highlights": highlights[:40]},
         }
 
     def get_state(self) -> dict:
@@ -392,6 +414,12 @@ class Engine:
         state["refreshing"] = self.refreshing
         state["progress"] = dict(self.progress)
         state["last_error"] = self.last_error
+        state["revision"] = self.revision
+        state["agenda"] = planner.agenda(self.storage)
+        state["horizon"] = planner.horizon(self.results.get("efemerides"))
+        state["connections"] = {k: v for k, v in self.connections.items() if not k.startswith("_")}
+        state["ai"] = dict(self.ai_status, enabled=bool(self.settings.get().get("ai_key")), available=ai.available(),
+                           working=self._ai_lock.locked())
         return state
 
     def status(self) -> dict:
@@ -399,8 +427,143 @@ class Engine:
             "refreshing": self.refreshing,
             "progress": dict(self.progress),
             "generated_at": self.state.get("generated_at"),
+            "revision": self.revision,
             "last_error": self.last_error,
+            "syncing": self._sync_lock.locked(),
         }
+
+    # ---------- Ideas con Claude (opcional) ----------
+
+    def request_ai(self, keys: list, force: bool = False) -> bool:
+        """Pide en segundo plano las ideas de Claude para las historias de portada que aún no las tienen."""
+        api_key = self.settings.get().get("ai_key")
+        if not api_key or self.demo_loader or not ai.available() or self._ai_lock.locked():
+            return False
+        failed_recently = self.ai_status.get("ok") is False and time.time() - (self.ai_status.get("at") or 0) < 3600
+        if failed_recently and not force:
+            return False
+        with self._lock:
+            targets = [s for s in self.state.get("stories", []) if s["key"] in keys]
+        if all(ai.cached(s, self._ai_cache) for s in targets):
+            return False
+        threading.Thread(target=self._run_ai, args=(api_key, targets), daemon=True).start()
+        return True
+
+    def _run_ai(self, api_key: str, targets: list) -> None:
+        if not self._ai_lock.acquire(blocking=False):
+            return
+        try:
+            asked = ai.enrich(api_key, targets, self._ai_cache, self.settings.get().get("name") or "")
+            self.ai_status = {"ok": True, "error": None, "at": time.time(), "asked": asked}
+        except ai.AIError as exc:
+            self.ai_status = {"ok": False, "error": str(exc), "at": time.time(), "asked": 0}
+        except Exception as exc:
+            traceback.print_exc()
+            self.ai_status = {"ok": False, "error": f"{exc.__class__.__name__}: {exc}"[:200], "at": time.time(), "asked": 0}
+        finally:
+            self._ai_cache = ai.prune(self._ai_cache)
+            self.storage.save_json("ai-cache.json", self._ai_cache)
+            self.storage.save_json("ai-status.json", self.ai_status)
+            with self._lock:
+                ai.attach(self.state.get("stories", []), self._ai_cache)
+                self.revision += 1
+            self._ai_lock.release()
+
+    def ai_for_story(self, key: str) -> dict:
+        """Ideas de Claude para una historia concreta (desde su ficha). Espera a la respuesta."""
+        api_key = self.settings.get().get("ai_key")
+        if not api_key:
+            return {"error": "Añade tu clave de la API de Claude en Ajustes."}
+        with self._lock:
+            story = next((s for s in self.state.get("stories", []) if s["key"] == key), None)
+        if not story:
+            return {"error": "Esa historia ya no está en el radar."}
+        try:
+            ai.enrich(api_key, [story], self._ai_cache, self.settings.get().get("name") or "")
+        except ai.AIError as exc:
+            return {"error": str(exc)}
+        self.storage.save_json("ai-cache.json", self._ai_cache)
+        data = ai.cached(story, self._ai_cache)
+        if data:
+            with self._lock:
+                story["ai"] = data
+        return {"ai": data} if data else {"error": "Claude no devolvió ideas para esta historia."}
+
+    def agenda(self) -> dict:
+        return {"agenda": planner.agenda(self.storage), "horizon": planner.horizon(self.results.get("efemerides"))}
+
+    def recap(self, offset: int = 0) -> dict:
+        return recap.weekly(self.storage, offset)
+
+    def calendar(self, month: str) -> dict:
+        return planner.calendar_month(self.storage, self.results.get("efemerides"), month)
+
+    def save_plan(self, data: dict) -> dict:
+        item = planner.clean_item(data, partial=bool(data.get("id")))
+        if item.get("id") and not self.storage.plan_item(item["id"]):
+            raise planner.InvalidItem("Esa tarea ya no existe.")
+        return self.storage.save_plan_item(item)
+
+    def delete_plan(self, item_id: str) -> bool:
+        return self.storage.delete_plan_item(str(item_id or ""))
+
+    def link_preview(self, url: str) -> dict:
+        if self.demo_loader:
+            return {"url": url, "platform": planner.platform_of(url), "title": None, "author": None, "thumbnail": None, "views": None}
+        return connections.preview(url)
+
+    def request_sync(self) -> bool:
+        if self._sync_lock.locked():
+            return False
+        threading.Thread(target=self.sync_connections, daemon=True).start()
+        return True
+
+    def sync_connections(self) -> None:
+        """Trae tus vídeos publicados (YouTube, Instagram) y marca como hechas las tareas «Publicar» que encajan."""
+        if not self._sync_lock.acquire(blocking=False):
+            return
+        try:
+            settings = self.settings.get()
+            status = {"_synced_at": time.time()}
+            if self.demo_loader:
+                items = self.demo_loader("published") or []
+                self.storage.upsert_published(items)
+                status["youtube"] = connections.status_line("youtube", [i for i in items if i["platform"] == "youtube"])
+                status["instagram"] = connections.status_line("instagram", [i for i in items if i["platform"] == "instagram"])
+            else:
+                if settings.get("youtube_channel"):
+                    try:
+                        channel_id = settings.get("youtube_channel_id") or connections.resolve_channel(settings["youtube_channel"])
+                        if channel_id != settings.get("youtube_channel_id"):
+                            self.settings.update({"youtube_channel_id": channel_id}, trusted=True)
+                        items = connections.fetch_youtube(channel_id)
+                        self.storage.upsert_published(items)
+                        status["youtube"] = connections.status_line("youtube", items)
+                    except Exception as exc:
+                        status["youtube"] = connections.status_line("youtube", [], str(exc)[:200])
+                token = settings.get("instagram_token")
+                if token:
+                    try:
+                        if time.time() - (settings.get("instagram_token_at") or 0) > INSTAGRAM_TOKEN_REFRESH:
+                            try:
+                                token = connections.refresh_instagram_token(token)
+                                self.settings.update({"instagram_token": token, "instagram_token_at": time.time()}, trusted=True)
+                            except SourceError:
+                                pass
+                        items = connections.fetch_instagram(token)
+                        self.storage.upsert_published(items)
+                        status["instagram"] = connections.status_line("instagram", items)
+                    except Exception as exc:
+                        status["instagram"] = connections.status_line("instagram", [], str(exc)[:200])
+            status["matched"] = planner.auto_match(self.storage)
+            self.connections = status
+            self.storage.save_json("connections-status.json", status)
+            with self._lock:
+                self.revision += 1
+        except Exception:
+            traceback.print_exc()
+        finally:
+            self._sync_lock.release()
 
     def history(self, days: int = 7) -> dict:
         days = max(1, min(int(days), 30))

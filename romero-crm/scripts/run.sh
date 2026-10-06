@@ -42,7 +42,7 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 
 STAMP="$VENV/.romero-requirements"
-WANT="$(cat "$DIR/requirements.txt" "$DIR/requirements-desktop.txt" 2>/dev/null | cksum | cut -d" " -f1)"
+WANT="$(cat "$DIR/requirements.txt" "$DIR/requirements-desktop.txt" "$DIR/requirements-extra.txt" 2>/dev/null | cksum | cut -d" " -f1)"
 if [ "$(cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
   echo "Instalando lo necesario…"
   "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --upgrade pip >/dev/null 2>&1
@@ -51,7 +51,9 @@ if [ "$(cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
     exit 1
   fi
   "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check -r "$DIR/requirements-desktop.txt" \
-    || echo "Aviso: no se pudo instalar la ventana propia; Romero CRM se abrirá en tu navegador."
+    || echo "Aviso: no se pudo instalar la ventana propia; Romero Xandre CRM se abrirá en tu navegador."
+  "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check -r "$DIR/requirements-extra.txt" \
+    || echo "Aviso: no se pudo instalar el componente opcional de Claude; el resto funciona igual."
   echo "$WANT" > "$STAMP"
 fi
 

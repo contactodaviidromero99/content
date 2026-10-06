@@ -132,10 +132,21 @@ def build_items(day_data: dict, target: dt.date) -> list:
     return unique
 
 
-def fetch(cache_dir: Path, days: int = 30, today: dt.date = None, budget_s: float = 20.0) -> SourceResult:
+def fetch(cache_dir: Path, days: int = 45, today: dt.date = None, budget_s: float = 20.0) -> SourceResult:
+    """Efemérides de hoy a `days` días vista. Los días ya pasados de este mes salen de la caché (sin red)
+    para que el calendario del mes no tenga huecos."""
     session = make_session(APP_UA, retry_rate_limit=False)
     today = today or dt.date.today()
     all_days, errors, partial = [], [], False
+    for back in range((today - today.replace(day=1)).days, 0, -1):
+        target = today - dt.timedelta(days=back)
+        path = _cache_path(cache_dir, target.month, target.day)
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                all_days.append({"date": target.isoformat(), "items": build_items(data, target)[:12]})
+            except (OSError, ValueError):
+                pass
     started = time.monotonic()
     for offset in range(days):
         target = today + dt.timedelta(days=offset)
@@ -154,9 +165,11 @@ def fetch(cache_dir: Path, days: int = 30, today: dt.date = None, budget_s: floa
                 break
         if not cached:
             time.sleep(1.0)
+    upcoming = [d for d in all_days if d["date"] >= today.isoformat()]
     return SourceResult(
         source="efemerides",
         ok=True,
         items=all_days,
-        meta={"highlights": pick_highlights(all_days)[:40], "errors": errors[:3], "partial": partial},
+        meta={"highlights": pick_highlights(upcoming)[:60], "errors": errors[:3], "partial": partial,
+              "today": today.isoformat()},
     )
