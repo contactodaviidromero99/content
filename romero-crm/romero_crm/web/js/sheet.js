@@ -102,7 +102,7 @@ function storyHtml(story, detail, loading) {
           <div class="window-track"><i style="width:${used.toFixed(1)}%"></i></div>
           <div class="small muted">${story.remaining_hours > 0.5 ? `Margen para publicar: <b style="color:var(--text)">~${esc(F.hours(story.remaining_hours))}</b>` : 'Margen casi agotado: mejor un ángulo de fondo que no caduque.'}</div></div>` : ''}
         <div class="stat-grid" style="margin-top:14px">
-          <div><span>Calor</span><b>${story.heat}</b></div><div><span>Búsquedas</span><b>${U.volume(story)}</b></div>
+          <div><span>Calor</span><b>${story.heat}</b></div><div><span>${(story.trends || 0) > 1 ? 'Búsquedas (total)' : 'Búsquedas'}</span><b>${U.volume(story)}</b></div>
           <div><span>En X</span><b>${story.x_rank ? `nº ${story.x_rank}` : '—'}</b></div><div><span>Medios</span><b>${story.outlets || '—'}</b></div></div>
       </section>
       ${members ? `<section class="sheet-section"><h3>Forma parte de esta historia</h3><div class="member-chips">${members}</div></section>` : ''}
