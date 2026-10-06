@@ -252,6 +252,7 @@ DESCRIPTION_KEYWORDS = {
                  "historical", "arqueologico", "archaeological", "genocidio", "holocausto", "dictador",
                  "dictator", "almirante", "navegante", "rey de", "reina de", "king of", "queen of", "santo",
                  "santa", "religioso", "fraile", "monje", "beato", "obispo", "cardenal", "teologo", "mistico",
+                 "fundador de la orden", "orden de los", "franciscanos", "jesuita", "dominico",
                  "escritor", "writer", "novelista", "poeta", "poet", "pintor", "painter", "filosofo",
                  "philosopher", "novela", "novel", "obra de teatro", "monumento", "catedral", "castillo"],
     "ciencia": ["cientifico", "scientist", "fisico", "physicist", "quimico", "chemist", "matematico",
