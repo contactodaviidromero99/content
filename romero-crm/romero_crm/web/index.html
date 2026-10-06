@@ -4,44 +4,62 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="romero-token" content="{{TOKEN}}">
-  <title>Romero CRM</title>
+  <title>Romero Xandre CRM</title>
   <link rel="icon" href="/static/img/logo.svg" type="image/svg+xml">
+  <link rel="preload" href="/static/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar" id="sidebar">
-      <a class="brand" href="#/radar" aria-label="Romero CRM, inicio">
-        <img src="/static/img/logo.svg" alt="" width="30" height="30">
-        <span class="brand-name">Romero <span>CRM</span></span>
-      </a>
-      <nav class="nav" id="nav" aria-label="Secciones"></nav>
-      <div class="sidebar-foot" id="sidebar-foot"></div>
-    </aside>
-    <main class="main">
-      <div class="demo-banner" id="demo-banner" hidden>Modo demostración: estás viendo datos de ejemplo, no tendencias reales.</div>
-      <header class="topbar">
-        <div class="topbar-title">
-          <h1 id="page-title">Radar</h1>
-          <p id="page-subtitle"></p>
-        </div>
-        <div class="topbar-actions">
-          <label class="search">
-            <span class="search-icon" data-icon="search"></span>
-            <input id="search" type="search" placeholder="Buscar tema…" autocomplete="off" spellcheck="false">
-          </label>
-          <button class="btn btn-ghost icon-btn" id="theme-toggle" type="button" title="Cambiar tema" aria-label="Cambiar tema"></button>
-          <button class="btn btn-primary" id="refresh" type="button"><span data-icon="refresh"></span><span class="label">Actualizar</span></button>
-        </div>
-      </header>
-      <div class="filters" id="filters"></div>
-      <section class="view" id="view" aria-live="polite"></section>
-    </main>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ffd07a"/><stop offset="0.55" stop-color="#ff9a4a"/><stop offset="1" stop-color="#ff5d8f"/>
+      </linearGradient>
+    </defs>
+  </svg>
+  <div class="fx" id="fx" aria-hidden="true">
+    <div class="fx-aurora"><i></i><i></i><i></i></div>
+    <div class="fx-grid"></div>
+    <div class="fx-spot"></div>
   </div>
+
+  <header class="topbar" id="topbar">
+    <a class="brand" href="#/hoy" aria-label="Romero Xandre CRM, inicio">
+      <img src="/static/img/brand.svg" alt="" width="30" height="30">
+      <span class="brand-name">Romero <em>Xandre</em></span>
+    </a>
+    <nav class="nav" id="nav" aria-label="Secciones">
+      <span class="nav-ink" id="nav-ink" aria-hidden="true"></span>
+      <a href="#/hoy" data-route="hoy">Hoy</a>
+      <a href="#/noticias" data-route="noticias">Noticias</a>
+      <a href="#/calendario" data-route="calendario">Calendario</a>
+      <a href="#/historial" data-route="historial">Historial</a>
+    </nav>
+    <div class="top-actions">
+      <button class="search-pill" id="open-palette" type="button" aria-label="Buscar (⌘K)">
+        <span data-icon="search"></span><span class="label">Buscar tema</span><kbd>⌘K</kbd>
+      </button>
+      <button class="icon-btn" id="refresh" type="button" aria-label="Actualizar">
+        <span data-icon="refresh"></span><i class="health" id="health"></i>
+      </button>
+      <a class="icon-btn" href="#/ajustes" id="settings-link" aria-label="Ajustes"><span data-icon="settings"></span></a>
+    </div>
+  </header>
+
+  <div class="demo-banner" id="demo-banner" hidden>Modo demostración · datos de ejemplo, no son tendencias reales</div>
+
+  <main class="main" id="main">
+    <section class="view" id="view" aria-live="polite"></section>
+  </main>
+
   <div class="scrim" id="scrim" hidden></div>
-  <aside class="drawer" id="drawer" aria-hidden="true" tabindex="-1"></aside>
+  <aside class="sheet" id="sheet" aria-hidden="true" tabindex="-1"></aside>
+  <div class="modal-layer" id="modal" hidden></div>
+  <div class="palette-layer" id="palette" hidden></div>
+  <div class="tray" id="tray" hidden></div>
   <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
-  <div class="toast" id="toast" hidden></div>
+  <div class="toast" id="toast" role="status" hidden></div>
   <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

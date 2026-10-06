@@ -464,6 +464,15 @@ def _aggregate(members: list, now: float):
         metric = {"value": None, "kind": "", "plus": False}
 
     query = (google or {}).get("query") or (wiki or {}).get("title") or title.lstrip("#")
+    seen_titles = {key(title)}
+    aliases = []
+    for member in members:
+        if member.item in (google, x, wiki) or member.item.get("lang") not in (None, "es"):
+            continue
+        name = member.item.get("title") or ""
+        if key(name) and key(name) not in seen_titles:
+            seen_titles.add(key(name))
+            aliases.append({"source": member.source, "title": name})
     return {
         "key": topic_key,
         "title": title,
@@ -487,6 +496,7 @@ def _aggregate(members: list, now: float):
         "metric": metric,
         "growth_pct": (google or {}).get("growth_pct"),
         "utility": is_utility(query),
+        "aliases": aliases[:6],
         "_member_tokens": [m.tokens for m in members if m.tokens],
         "_member_keys": [m.key for m in members if m.key],
     }

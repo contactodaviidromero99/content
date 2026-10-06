@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from .planner import InvalidItem
+
 WEB_DIR = (Path(__file__).parent / "web").resolve()
 CSP = (
     "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; "
@@ -17,6 +19,7 @@ CSP = (
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
 mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("font/woff2", ".woff2")
 
 
 class AppServer:
@@ -102,11 +105,21 @@ class AppServer:
                     except ValueError:
                         days = 7
                     return self._json(app.engine.history(days))
+                if path == "/api/recap":
+                    try:
+                        week = int((query.get("week") or ["0"])[0])
+                    except ValueError:
+                        week = 0
+                    return self._json(app.engine.recap(week))
+                if path == "/api/agenda":
+                    return self._json(app.engine.agenda())
+                if path == "/api/calendar":
+                    return self._json(app.engine.calendar((query.get("month") or [""])[0]))
                 if path == "/api/topic":
                     topic_key = (query.get("key") or [""])[0]
                     return self._json(app.engine.topic_detail(topic_key))
                 if path == "/api/settings":
-                    return self._json(dict(app.settings.get(), data_dir=str(app.storage.root)))
+                    return self._json(dict(app.settings.public(), data_dir=str(app.storage.root)))
                 return self._send(404, b"not found", "text/plain")
 
             def do_POST(self):
@@ -123,7 +136,27 @@ class AppServer:
                         app.engine.request_refresh()
                     elif before["refresh_minutes"] != after["refresh_minutes"]:
                         app.engine.reschedule()
-                    return self._json(dict(after, data_dir=str(app.storage.root)))
+                    if before["youtube_channel"] != after["youtube_channel"] or before["instagram_token"] != after["instagram_token"]:
+                        app.engine.request_sync()
+                    if after["ai_key"] and before["ai_key"] != after["ai_key"]:
+                        app.engine.request_ai((app.engine.state.get("portada") or {}).get("keys") or [], force=True)
+                    return self._json(dict(app.settings.public(), data_dir=str(app.storage.root)))
+                if path == "/api/plan":
+                    try:
+                        return self._json(app.engine.save_plan(body))
+                    except InvalidItem as exc:
+                        return self._json({"error": str(exc)}, 400)
+                if path == "/api/plan/delete":
+                    return self._json({"ok": app.engine.delete_plan(body.get("id"))})
+                if path == "/api/link-preview":
+                    url = str(body.get("url") or "")
+                    if not url.startswith(("https://", "http://")):
+                        return self._json({"error": "Pega un enlace que empiece por https://"}, 400)
+                    return self._json(app.engine.link_preview(url))
+                if path == "/api/ai/story":
+                    return self._json(app.engine.ai_for_story(str(body.get("key") or "")))
+                if path == "/api/sync":
+                    return self._json({"started": app.engine.request_sync()})
                 if path == "/api/open":
                     url = str(body.get("url") or "")
                     if not url.startswith(("https://", "http://")):

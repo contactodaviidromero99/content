@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
 import datetime as dt
+import gzip
 import json
+import os
 import re
 import sys
 import tempfile
@@ -19,6 +22,7 @@ from .sources import efemerides, google_trends, news, wikipedia, x_trends, youtu
 from .storage import Storage
 
 RESULTS = {}
+DUMP = {}
 
 
 def section(title: str) -> None:
@@ -262,6 +266,11 @@ def diag_pipeline() -> None:
         engine = Engine(Settings(root / "settings.json"), Storage(root))
         engine.refresh(force=True)
         state = engine.get_state()
+        efem = engine.results.get("efemerides")
+        DUMP["efemerides"] = [{"date": d["date"], "items": [_slim_efemeride(i) for i in d["items"]]}
+                              for d in (efem.items if efem and efem.ok else [])]
+    DUMP["now"] = state.get("generated_at")
+    DUMP["topics"] = [_slim_topic(t) for t in (state.get("topics") or []) if not t["utility"]][:170]
     show("error interno", state.get("last_error"))
     for source, info in state["sources"].items():
         print(f"   · {source:<12} ok={info['ok']} n={info['count']} modo={info['mode']} cuenta={info.get('requires_login')} "
@@ -302,6 +311,67 @@ def diag_pipeline() -> None:
     show("kpis", json.dumps(state.get("kpis"), ensure_ascii=False))
     show("nichos", [(n["id"], n["count"]) for n in state.get("niche_stats", [])][:12])
     show("efemérides destacadas", [(h["date"], h["years_ago"], h["title"]) for h in state["efemerides"]["highlights"][:8]])
+    section("PORTADA (las cinco historias de «Hoy»)")
+    stories = state.get("stories") or []
+    by_key = {s["key"]: s for s in stories}
+    show("historias", len(stories))
+    show("alertas", (state.get("portada") or {}).get("alerts"))
+    for key in (state.get("portada") or {}).get("keys") or []:
+        story = by_key.get(key) or {}
+        print(f"   ● {story.get('title')!r} [{story.get('niche')} · {story.get('scope')} · {story.get('phase')}] "
+              f"calor={story.get('heat')} pot={story.get('potential')} puntos={story.get('score')} rutina={story.get('routine')}")
+        print(f"       incluye:  {[m['title'] for m in story.get('members') or []]}")
+        for line in story.get("synopsis") or []:
+            print(f"       qué pasó: {line['text']!r} ({line.get('source')})")
+        print(f"       contexto: {story.get('context')}")
+        print(f"       enfoque:  {(story.get('angle') or {}).get('verdict')}")
+        for tip in (story.get("angle") or {}).get("tips") or []:
+            print(f"                 · {tip}")
+    section("HISTORIAS AGRUPADAS (más de un tema)")
+    for story in [s for s in stories if s.get("members")][:30]:
+        print(f"   - {story['title']!r} ({story['niche']}, {story['scope']}) <- {[m['title'] for m in story['members']]}")
+    show("en el ámbito mundo", [s["title"] for s in stories if s.get("scope") == "mundo"][:20])
+    show("recurrentes", [s["title"] for s in stories if s.get("routine")][:20])
+    show("horizonte", [(h["date"], h["type"], h["title"]) for h in state.get("horizon") or []])
+
+
+def diag_connections() -> None:
+    from . import connections
+    session = make_session()
+    session.cookies.set("SOCS", "CAI", domain=".youtube.com", path="/")
+    for handle in ("@TEDx", "@VisualPolitik"):
+        try:
+            channel = connections.resolve_channel(handle, session)
+            feed = session.get(connections.YT_FEED.format(cid=channel), timeout=TIMEOUT)
+            show(f"youtube {handle}", f"canal {channel} · feed {feed.status_code} · {feed.text[:90]!r}")
+            for tab in ("videos", "shorts"):
+                page = session.get(connections.YT_TAB.format(cid=channel, tab=tab), params={"hl": "es", "gl": "ES"}, timeout=TIMEOUT)
+                found = connections.parse_channel_tab(page.text, shorts=tab == "shorts")
+                show(f"  pestaña {tab}", f"estado {page.status_code} · {len(found) if found is not None else 'sin ytInitialData'} vídeos")
+                for video in (found or [])[:3]:
+                    print(f"     · {video['title'][:60]!r} · {video['views']} vistas · {video['published']!r} · {video['url']}")
+            items = connections.fetch_youtube(channel, session)
+            show("  resultado", f"{len(items)} vídeos · con fecha {sum(1 for i in items if i['published_at'])} · "
+                                f"exacta {sum(1 for i in items if i['published_at'] and i['source'] == 'youtube')}")
+            for item in items[:3]:
+                when = dt.datetime.fromtimestamp(item["published_at"]).isoformat() if item["published_at"] else None
+                print(f"     · {item['title'][:60]!r} · {item['views']} vistas · {when} ({item['source']}) · {item['url']}")
+            if items:
+                watch = session.get(connections.YT_WATCH.format(vid=items[0]["vid"]), timeout=TIMEOUT)
+                markers = [m for m in ("datePublished", "publishDate", "uploadDate", "viewCount", "interactionCount", "not a bot") if m in watch.text]
+                show("  página del vídeo", f"estado {watch.status_code} · longitud {len(watch.text)} · contiene {markers}")
+                show("  fecha leída", connections.parse_watch_date(watch.text))
+                for marker in ("publishDate", "dateText", "viewCount"):
+                    at = watch.text.find(marker)
+                    if at >= 0:
+                        snippet(watch.text[max(0, at - 60): at + 140], 220)
+        except Exception as exc:
+            show(f"youtube {handle}", f"ERROR {exc}")
+    for url in ("https://www.tiktok.com/@scout2015/video/6718335390845095173", "https://www.youtube.com/watch?v=jNQXAC9IVRw"):
+        try:
+            show("vista previa", json.dumps(connections.preview(url), ensure_ascii=False)[:400])
+        except Exception as exc:
+            show("vista previa", f"ERROR {exc}")
 
 
 CHECKS = {
@@ -311,7 +381,34 @@ CHECKS = {
     "news": ("GOOGLE NEWS", diag_news),
     "youtube": ("YOUTUBE", diag_youtube),
     "pipeline": ("RADAR COMPLETO", diag_pipeline),
+    "conexiones": ("CONEXIONES (YOUTUBE, TIKTOK)", diag_connections),
 }
+
+
+def _slim_topic(topic: dict) -> dict:
+    out = {k: v for k, v in topic.items() if not k.startswith("_") and k not in ("series", "image", "metric", "volume_trend")}
+    news_block = dict(topic.get("news") or {})
+    news_block["items"] = [{k: n.get(k) for k in ("title", "source", "published", "url", "coverage", "from_trend", "section")}
+                           for n in news_block.get("items") or []]
+    out["news"] = news_block
+    if out.get("youtube"):
+        out["youtube"] = {k: v for k, v in out["youtube"].items() if k != "videos"}
+    return out
+
+
+def _slim_efemeride(item: dict) -> dict:
+    return {k: (item.get(k)[:240] if k == "text" and item.get(k) else item.get(k))
+            for k in ("date", "year", "years_ago", "round_level", "kind", "text", "title", "description", "url", "spain", "niche", "score")}
+
+
+def dump(payload: dict) -> None:
+    """Los temas y efemérides de este momento (gzip + base64 en líneas «DUMP»), para reproducir en local la
+    portada exacta que salió con datos reales y ajustar las reglas sobre ella."""
+    blob = base64.b64encode(gzip.compress(json.dumps(payload, ensure_ascii=False).encode("utf-8"), 9)).decode("ascii")
+    print("DUMP-BEGIN")
+    for start in range(0, len(blob), 3000):
+        print("DUMP " + blob[start:start + 3000])
+    print("DUMP-END", flush=True)
 
 
 def main(argv=None) -> None:
@@ -324,6 +421,8 @@ def main(argv=None) -> None:
     section("RESUMEN")
     for name, outcome in RESULTS.items():
         print(f"  {name}: {outcome}")
+    if os.environ.get("ROMERO_DUMP") and DUMP.get("topics"):
+        dump(DUMP)
 
 
 if __name__ == "__main__":

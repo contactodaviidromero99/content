@@ -211,7 +211,7 @@ KEYWORDS = {
 UTILITY_PATTERNS = [
     "bonoloto", "euromillones", "primitiva", "la primitiva", "loteria nacional", "comprobar loteria",
     "cupon once", "once", "quiniela", "el gordo de la primitiva", "eurojackpot", "lototurf", "quinigol",
-    "super once", "triplex", "eurodreams", "el tiempo", "tiempo manana", "calendario laboral",
+    "super once", "triplex", "eurodreams", "el tiempo", "tiempo manana", "tiempo hoy", "weather", "calendario laboral",
     "resultados loteria", "horario", "donde ver", "a que hora", "cita previa", "traductor",
     "feliz lunes", "feliz martes", "feliz miercoles", "feliz jueves", "feliz viernes", "feliz sabado",
     "feliz domingo", "feliz finde", "feliz fin de semana", "buenos dias", "buenas noches", "buen lunes",
@@ -252,6 +252,7 @@ DESCRIPTION_KEYWORDS = {
                  "historical", "arqueologico", "archaeological", "genocidio", "holocausto", "dictador",
                  "dictator", "almirante", "navegante", "rey de", "reina de", "king of", "queen of", "santo",
                  "santa", "religioso", "fraile", "monje", "beato", "obispo", "cardenal", "teologo", "mistico",
+                 "fundador de la orden", "orden de los", "franciscanos", "jesuita", "dominico",
                  "escritor", "writer", "novelista", "poeta", "poet", "pintor", "painter", "filosofo",
                  "philosopher", "novela", "novel", "obra de teatro", "monumento", "catedral", "castillo"],
     "ciencia": ["cientifico", "scientist", "fisico", "physicist", "quimico", "chemist", "matematico",
